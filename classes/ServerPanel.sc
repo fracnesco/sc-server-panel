@@ -223,12 +223,10 @@ SPWidgetBase {
 		^cls.gui
 	}
 
-	// the node tree: NodeSnapshot's live view when that quark is there,
-	// the stock plotTree when it is not
+	// the node tree, as an outline (SPTree)
 	*openTree {
 		|server|
-		if (server.serverRunning.not) { ^nil };
-		^\TreeSnapshotView.asClass !? { |cls| cls.new(server).autoUpdate().front() } ?? { server.plotTree }
+		^SPTree(server)
 	}
 
 	*hasMasterFx { ^\FxChain.asClass.notNil }
@@ -321,7 +319,7 @@ SPSelectorWidget : SPWidgetBase {
 				{ server.queryAllNodes(true) }),
 
 			SPAction("Level meters", 'l',
-				{ server.tryPerform(\meter) }),
+				{ SPMeter(server) }),
 
 			SPAction("Tree view", 'p',
 				{ SPWidgetBase.openTree(server) }),
@@ -378,7 +376,7 @@ SPSelectorWidget : SPWidgetBase {
 			}).shortcut_("n"),
 
 			MenuAction("Level meters", {
-				server.tryPerform(\meter)
+				SPMeter(server)
 			}).shortcut_("l"),
 
 			MenuAction("Tree view", {

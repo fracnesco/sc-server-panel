@@ -1,0 +1,59 @@
+TITLE:: SPMeter
+summary:: the server's level meters, in ServerPanel's colours, with peak hold and clip lights
+categories:: Libraries>ServerPanel
+related:: Classes/SPScope, Classes/SPTree, Classes/ServerPanel, Classes/ServerMeter
+
+DESCRIPTION::
+What code::s.meter:: opens, made again the way link::Classes/ServerPanel:: is drawn. A bar per input and per output: the rms as the body (blue, orange above -6 dB, red above -1 dB), the peak as a white line, the held peak as an orange one (red over 0 dBFS). The light over each bar goes red when a peak reaches 0 dBFS and stays red; the number under the bar is the highest peak since the last reset. One dB scale runs beside all of them. Point at a bar and the top row reads its peak, rms and highest peak.
+
+Click the meters, or press strong::reset::, to let go of the holds, the numbers and the lights.
+
+Its synth reads the inputs with code::SoundIn:: and the outputs from bus 0, at the tail of the root node, so the outputs are read after everything, a master fx chain included. It sends 20 replies a second. One per server; ServerPanel's code::l:: key opens it. It survives cmd + period and a reboot and frees its synth when it closes.
+
+code::
+s.boot;
+SPMeter(s);
+SPMeter(s).dbLow = -80;        // the bottom of the scale
+SPMeter(s).holdTime = inf;     // hold the highest peak until a click
+SPMeter(s).reset;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+The level meters of a server, opened if they are not.
+ARGUMENT:: server
+A link::Classes/Server::; code::Server.default:: when nil.
+RETURNS:: an SPMeter
+
+METHOD:: replyRate
+Replies a second: 20.
+
+METHOD:: maxChannels
+The most inputs, and the most outputs, shown: 32 each.
+
+METHOD:: dbRanges
+The bottoms of the scale the window offers.
+
+METHOD:: holdTimes
+The hold times the window offers, in seconds; code::inf:: holds until a click.
+
+INSTANCEMETHODS::
+
+METHOD:: dbLow
+The bottom of the scale, in dB.
+
+METHOD:: holdTime
+How long a peak is held, in seconds; code::inf:: until a click.
+
+METHOD:: reset
+Let go of the held peaks, the highest peaks under the bars and the clip lights.
+
+METHOD:: running
+Whether the meters run. Paused, they have no synth on the server.
+
+METHOD:: front
+Bring the window to the front.
+
+METHOD:: close
+Close the window, freeing the synth.

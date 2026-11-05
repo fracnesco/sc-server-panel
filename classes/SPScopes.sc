@@ -30,180 +30,36 @@
 // scopes do, so they need a server on this machine.
 // =====================================================================
 
-SPScopeWindow {
-	classvar <all;
+// ---------------------------------------------------------------------
+// SPScopeWindow - a ScopeView with a grid drawn over it, which takes the
+// mouse: the readout and the wheel are the grid's
+// ---------------------------------------------------------------------
 
-	var <server, key, <window, <scopeView, <grid, readout, runButton;
-	var <running = true, startThread, stopped;
+SPScopeWindow : SPWindow {
+	var <scopeView, <grid, startThread, stopped;
 
-	*initClass { all = IdentityDictionary.new }
-
-	// one window per server: asking again brings the open one to the front
-	*new {
-		|server|
-		var k, existing;
-		server = server ? Server.default;
-		k = (this.name ++ "_" ++ server.name).asSymbol;
-		existing = all[k];
-		if (existing.notNil and: { existing.isOpen }) {
-			existing.front;
-			^existing
-		};
-		existing = super.new.prInit(server, k);
-		all[k] = existing;
-		^existing
-	}
-
-	// --------------------------------------------------- what a subclass says
-
-	title { ^this.subclassResponsibility(thisMethod) }
-	defaultSize { ^Point(600, 340) }
-	controls { ^[] }						// the widgets of the top row
-	prStart { }								// its synth, on the server
-	prStop { |freeAll = false| }
 	prDrawGrid { |v| }
 	prHover { |v, x, y| ^"" }				// what the readout says at x, y
-	prResized { }
+	runHint { ^"run or pause the scope (space)" }
 
-	// ------------------------------------------------------------------ open
-
-	isOpen { ^window.notNil and: { window.isClosed.not } }
-	front { if (this.isOpen) { window.front } }
-	close { if (this.isOpen) { window.close } }
-
-	running_ {
-		|bool|
-		running = bool.booleanValue;
-		if (running) { this.prRestart } { this.prStop };
-		{ runButton !? { |b| if (b.isClosed.not) { b.value = running.binaryValue } } }.defer;
-	}
-
-	prInit {
-		|argServer, argKey|
-		var size = this.defaultSize, stack, top;
-		server = argServer;
-		key = argKey;
-
-		window = Window(this.title ++ " - " ++ server.name, Rect(200, 200, size.x, size.y), resizable: true);
-		window.tryPerform(\autoRememberPosition, key);
-		window.acceptsMouseOver = true;
-		if (GUI.id == \qt) { window.view.palette = QPalette.dark };
-		window.view.background = SPWidgetBase.colBg;
-
+	prBody {
+		var stack;
 		scopeView = ScopeView()
 			.server_(server)
 			.background_(SPWidgetBase.colOff)
 			.canFocus_(false);
-
-		// the grid lies over the trace and takes the mouse: the scope itself
-		// needs none, and the readout and the wheel are the grid's
 		grid = UserView()
 			.drawFunc_({ |v| this.prDrawGrid(v) })
 			.mouseOverAction_({ |v, x, y| this.prReadout(this.prHover(v, x, y)) })
 			.mouseMoveAction_({ |v, x, y| this.prReadout(this.prHover(v, x, y)) })
 			.mouseLeaveAction_({ this.prReadout("") })
 			.mouseWheelAction_({ |v, x, y, mods, dx, dy| this.prWheel(mods, dx, dy); true });
-
 		stack = View().layout_(StackLayout(grid, scopeView).mode_(\stackAll));
 		stack.onResize_({ this.prResized; grid.refresh });
-
-		runButton = Button()
-			.fixedSize_(40@20)
-			.canFocus_(false)
-			.font_(this.font(10, true))
-			.states_([["run", SPWidgetBase.colText, SPWidgetBase.colPanel],
-				["run", Color.black, SPWidgetBase.colAccent]])
-			.value_(running.binaryValue)
-			.toolTip_("run or pause the scope (space)")
-			.action_({ |b| this.running = b.value == 1 });
-
-		readout = StaticText()
-			.font_(Font(Font.defaultMonoFace, 10))
-			.stringColor_(SPWidgetBase.colText)
-			.align_(\right)
-			.minWidth_(160);
-
-		top = HLayout(*([runButton] ++ this.controls ++ [nil, readout])).spacing_(6).margins_(0);
-		window.layout = VLayout(top, [stack, stretch: 1]).margins_(6).spacing_(6);
-
-		window.view.keyDownAction_({ |v, char, mods, unicode, keycode|
-			case
-			{ char == $  } { this.running = running.not; true }
-			{ keycode == 53 or: { unicode == 27 } } { this.close; true }
-		});
-
-		window.onClose_({
-			ServerTree.remove(this, server);
-			ServerQuit.remove(this, server);
-			this.prStop(true);
-			if (all[key] === this) { all.removeAt(key) };
-		});
-
-		ServerTree.add(this, server);
-		ServerQuit.add(this, server);
-		window.front;
-		this.prResized;
-		if (server.serverRunning) { this.prRestart };
+		^stack
 	}
 
-	// ---------------------------------------------------------------- server
-
-	prRestart {
-		if (running and: { server.serverRunning }) {
-			this.prStop;
-			this.prStart;
-		}
-	}
-
-	// after a boot and after cmd + period: what was on the server is gone
-	doOnServerTree { |s| if (s.isNil or: { s == server }) { this.prRestart; this.prRefresh } }
-
-	doOnServerQuit { |s| if (s.isNil or: { s == server }) { this.prStop(true) } }
-
-	// ---------------------------------------------------------------- the GUI
-
-	font { |size = 11, bold = false| ^Font(Font.defaultSansFace, size, bold) }
-
-	prLabel {
-		|str|
-		^StaticText().string_(str).font_(this.font(9)).stringColor_(SPWidgetBase.colDim)
-	}
-
-	prNumberBox {
-		|value, lo, hi, step, width, action, hint|
-		^NumberBox()
-			.font_(this.font(9))
-			.align_(\right)
-			.fixedWidth_(width ? 36).fixedHeight_(20)
-			.clipLo_(lo).clipHi_(hi).step_(step ? 1).scroll_step_(step ? 1)
-			.decimals_(if ((step ? 1) < 1) { 2 } { 0 })
-			.value_(value)
-			.toolTip_(hint ? "")
-			.action_({ |b| action.value(b.value) })
-	}
-
-	prMenu {
-		|items, value, width, action, hint|
-		^PopUpMenu()
-			.font_(this.font(9))
-			.fixedWidth_(width ? 70).fixedHeight_(20)
-			.items_(items)
-			.value_(value)
-			.canFocus_(false)
-			.toolTip_(hint ? "")
-			.action_({ |m| action.value(m.value) })
-	}
-
-	prButton {
-		|str, width, action, hint|
-		^Button()
-			.fixedWidth_(width).fixedHeight_(20)
-			.canFocus_(false)
-			.font_(this.font(9))
-			.states_([[str, SPWidgetBase.colText, SPWidgetBase.colPanel]])
-			.toolTip_(hint ? "")
-			.action_({ action.value })
-	}
+	prRedraw { grid !? { if (grid.isClosed.not) { grid.refresh } } }
 
 	// Stop the view, then let go of what the server holds - in that order and
 	// in one AppClock turn. A ScopeView that paints on after its writer has gone
@@ -227,31 +83,6 @@ SPScopeWindow {
 	// in a Routine: wait until the last stop has let go
 	prAfterStop { stopped !? { |c| c.wait } }
 
-	prReadout { |str| if (readout.notNil and: { readout.isClosed.not }) { readout.string = str ? "" } }
-
-	prWheel { |mods, dx, dy| }
-
-	// redraw the grid and put the controls right, from any thread
-	prRefresh { { if (this.isOpen) { this.prSyncControls; grid.refresh } }.defer }
-
-	prSyncControls { }
-
-	prGridPen {
-		|alpha = 0.5|
-		Pen.strokeColor = SPWidgetBase.colGrid.copy.alpha_(alpha);
-		Pen.width = 1;
-	}
-
-	// a label at x, y (its top), aligned by hand: Pen.stringInRect left
-	// aligns whatever it is told
-	prText {
-		|str, x, y, color, align = \left|
-		var font = this.font(9), w = str.bounds(font).width;
-		x = switch(align, \right, { x - w }, \center, { x - (w / 2) }, { x });
-		Pen.stringAtPoint(str, Point(x, y), font, color ? SPWidgetBase.colDim);
-	}
-
-	sampleRate { ^server.sampleRate ? server.options.sampleRate ? 44100 }
 }
 
 

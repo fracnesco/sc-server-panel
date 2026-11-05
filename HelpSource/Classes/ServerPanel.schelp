@@ -1,7 +1,7 @@
 TITLE:: ServerPanel
 summary:: a compact server window: counters, meters, scope, volume, recorder
 categories:: Libraries>ServerPanel
-related:: Classes/SPScope, Classes/SPFreqScope, Classes/Server, Classes/Singleton
+related:: Classes/SPScope, Classes/SPFreqScope, Classes/SPMeter, Classes/SPTree, Classes/Server, Classes/Singleton
 
 DESCRIPTION::
 ServerPanel is a fork of Scott Carver's ServerView quark (link::https://github.com/scztt/ServerView.quark::), with its classes renamed so the two can be installed side by side. Both take over the window the server opens on boot, so keep one of them.
@@ -13,9 +13,9 @@ The window is drawn in a dark palette of its own, in the system sans-serif face,
 SECTION:: Keyboard shortcuts / interaction
 
 TABLE::
-## p || Show the node tree: NodeSnapshot's live view when that quark is installed, code::s.plotTree:: when it is not
+## p || Open an link::Classes/SPTree::, the node tree as an outline
 ## n || Dump all node information to post window (code::s.queryAllNodes(true)::)
-## l || Show level meters window.
+## l || Open an link::Classes/SPMeter::, the level meters
 ## b || Boot server (if not already running)
 ## s || Open an link::Classes/SPScope::, the oscilloscope in the same colours
 ## f || Open an link::Classes/SPFreqScope::, the frequency scope in the same colours

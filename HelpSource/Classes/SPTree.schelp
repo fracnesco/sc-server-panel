@@ -1,0 +1,78 @@
+TITLE:: SPTree
+summary:: the server's node tree as an outline: named groups, coloured synths, what just appeared
+categories:: Libraries>ServerPanel
+related:: Classes/SPMeter, Classes/ServerPanel, Classes/Group, Classes/Node
+
+DESCRIPTION::
+What code::s.plotTree:: shows, made legible. One row per node, indented by depth, with guides down the side.
+
+list::
+## A strong::group:: says what it is when that can be known: the root, the default group, an code::Ndef::, SuperDirt and each of its orbits, a ParaEQ fx chain. Its row says how many synths are inside, folded or not. Click it to fold it away; strong::open all:: unfolds everything.
+## A strong::synth:: shows its SynthDef, with a dot in a colour of its own: the same def is always the same colour, so twenty of one kind read as one kind. At the right it says what the synth belongs to when its name tells (a scope, SuperDirt's meter, a SuperDirtGUI insert ...). With strong::controls:: on, the row carries its controls and their values.
+## A node that has just appeared is lit in orange for a second, so what an event or a key press made shows.
+## The filter keeps the synths whose def, or groups whose name, contains what you type, with the groups they are in.
+## A double click on a synth traces it into the post window (code::/n_trace::).
+::
+
+It asks the server with code::/g_queryTree:: every half second (strong::every:: changes that). One per server; ServerPanel's code::p:: key opens it.
+
+code::
+s.boot;
+SPTree(s);
+SPTree(s).showControls = true;
+SPTree(s).filter = "dirt";
+SPTree(s).interval = 0.25;
+::
+
+subsection:: Names of your own
+
+A group's name comes from the functions in link::#*labellers::, a synth's note from link::#*notes::. Both are lists you can add to:
+
+code::
+~g = Group(s);
+SPTree.labellers.add({ |server, labels| labels[~g.nodeID] = "my group" });
+SPTree.notes.addFirst(["^my_", "one of mine"]);
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+The node tree of a server, opened if it is not.
+ARGUMENT:: server
+A link::Classes/Server::; code::Server.default:: when nil.
+RETURNS:: an SPTree
+
+METHOD:: labellers
+A link::Classes/List:: of functions code::{ |server, labels| }::, each putting nodeID -> name into code::labels:: (an link::Classes/IdentityDictionary::). Run before every redraw of the outline; an error in one is ignored.
+
+METHOD:: notes
+A link::Classes/List:: of code::[regexp, text]:: pairs: a synth whose def matches the regexp is described by the text. The first that matches wins.
+
+METHOD:: noteOf
+What link::#*notes:: say a def is.
+ARGUMENT:: def
+A SynthDef's name.
+RETURNS:: a link::Classes/String::, or nil
+
+METHOD:: intervals
+The intervals the window offers, in seconds.
+
+INSTANCEMETHODS::
+
+METHOD:: interval
+How often the server is asked, in seconds.
+
+METHOD:: showControls
+Whether each synth's controls are asked for and shown.
+
+METHOD:: filter
+Only the synths whose def contains this, and the groups they are in; an empty string shows everything.
+
+METHOD:: running
+Whether it follows the server. Paused, it holds the last tree.
+
+METHOD:: front
+Bring the window to the front.
+
+METHOD:: close
+Close the window.

@@ -1,6 +1,6 @@
 (
 	name: "ServerPanel",
-	summary: "a compact server window in the dark palette - counters, meters, scope, volume, recorder - with scope and frequency scope windows to match; a fork of scztt's ServerView",
+	summary: "a compact server window in the dark palette - counters, meters, scope, volume, recorder - with a scope, a frequency scope, level meters and a node tree to match; a fork of scztt's ServerView",
 	version: "0.1.0",
 	author: "Francesco Corvi",
 	url: "https://github.com/fracnesco/sc-server-panel.git",
@@ -9,7 +9,6 @@
 	schelp: "HelpSource",
 	dependencies: [
 		"Singleton",
-		"NodeSnapshot",
 		"WindowViewRecall",
 		"WindowHandleView",
 		"ServerOptionsGui@0.1",

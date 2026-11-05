@@ -15,7 +15,7 @@
 // ln -s is macOS and Linux. On Windows, use the quark, or copy this
 // folder into Platform.userExtensionDir by hand - .openOS opens it.
 //
-// Needs the quarks scztt's ServerView needs: Singleton, NodeSnapshot,
+// Needs the quarks scztt's ServerView needs, NodeSnapshot apart: Singleton,
 // WindowViewRecall, WindowHandleView, ServerOptionsGui, Connection and
 // Preference - the quark route installs them; with a link, install them
 // first (Quarks.install("Singleton") and so on). Insight, BusRecorder and
@@ -55,7 +55,7 @@ case
 
 // ---------------------------------------------------------------- verify
 (
-var missing = [\ServerPanel, \SPWidgetBase, \SPScope, \SPFreqScope]
+var missing = [\ServerPanel, \SPWidgetBase, \SPScope, \SPFreqScope, \SPMeter, \SPTree]
 	.select { |sym| sym.asClass.isNil };
 
 if (missing.notEmpty) {
@@ -64,7 +64,7 @@ if (missing.notEmpty) {
 		"\n  post window for compile errors.".format(missing.join(", "))).warn;
 } {
 	"ServerPanel is installed.".postln;
-	"  ServerPanel().front;  SPScope(s);  SPFreqScope(s);\n  help: ServerPanel, then cmd+d".postln;
+	"  ServerPanel().front;  SPScope(s);  SPFreqScope(s);  SPMeter(s);  SPTree(s);\n  help: ServerPanel, then cmd+d".postln;
 };
 )
 
