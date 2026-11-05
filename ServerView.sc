@@ -5,7 +5,11 @@ ServerView : Singleton {
 
 	*initClass {
 		panelTypes = IdentityDictionary();
-		widgets = List[ServerStatusWidget, ScopeWidget, HistoryWidget, VolumeWidget, RecordWidget];
+		// the master fx row sits under the counters, and only exists
+		// when the ParaEQ extension - FxChain - is compiled in
+		widgets = List[ServerStatusWidget]
+			++ (if (\FxChain.asClass.notNil) { [MasterFXWidget] } { [] })
+			++ [ScopeWidget, HistoryWidget, VolumeWidget, RecordWidget];
 		actions = IdentityDictionary();
 
 		ServerBoot.add(this);
@@ -56,9 +60,16 @@ ServerView : Singleton {
 	}
 
 	createView {
-		window = Window(bounds:Rect(0, 0, 265, 200), resizable:true, border:border);
+		window = Window("server", Rect(0, 0, 265, 200), resizable:true, border:border);
 		window.autoRememberPosition(\ServerView);
 		view = window.view.minWidth_(265).minHeight_(200);
+
+		// the dark palette every module window is drawn in, so the Qt
+		// widgets that are not coloured by hand - sliders, menus, number
+		// boxes - come out the same as theirs
+		if (GUI.id == \qt) { view.palette = QPalette.dark };
+		view.background = ServerWidgetBase.colBg;
+
 		view.keyDownAction_({
 			|v, char|
 			actions[char.asSymbol].value(this);
@@ -67,14 +78,14 @@ ServerView : Singleton {
 			view.layout_(HLayout(
 				WindowHandleView().maxWidth_(10).minWidth_(10),
 				widgetLayout = VLayout()
-			).spacing_(0).margins_(2));
+			).spacing_(0).margins_(6));
 		}{
 			view.layout_(HLayout(
 				widgetLayout = VLayout()
-			).spacing_(0).margins_(2));
+			).spacing_(0).margins_(6));
 		};
 
-		widgetLayout.margins = 3;
+		widgetLayout.margins = 2;
 		widgetLayout.spacing = 1;
 		view.onClose_(this.onClose(_));
 		this.populateView();
@@ -96,7 +107,7 @@ ServerView : Singleton {
 						UserView().fixedHeight_(10).drawFunc_({
 							|v|
 							var y = (v.bounds.height / 2).round + 0.5;
-							Pen.strokeColor = Color.grey(0.5, 0.2);
+							Pen.strokeColor = ServerWidgetBase.colGrid.copy.alpha_(0.5);
 							Pen.width = 1;
 							Pen.line(2@y, (v.bounds.width - 2)@y);
 							Pen.stroke();
@@ -149,38 +160,88 @@ ServerView : Singleton {
 	}
 }
 
+// =====================================================================
+// ServerWidgetBase - what every ServerView widget is built from
+//
+// The colours and fonts are the ones the module family's windows are
+// drawn in - BusRecorderGUI, InsightGUI, ModulePalette keep the same
+// values - copied here so this quark depends on none of them. A widget
+// reads them by name (colText, colPanel, ...) and makes its labels and
+// buttons with prLabel and prButton, the way those windows do.
+//
+// Insight, BusRecorder and the master fx chain (FxChain, from the
+// ParaEQ extension) are optional. Each is looked up by name at runtime
+// and never referenced directly, so ServerView compiles and runs
+// without them; the buttons and rows that open them only exist when
+// the class does.
+// =====================================================================
+
 ServerWidgetBase {
-	var server, parent, buttonColor, faintGreen, faintRed, faintYellow, faintBlue,
-	brightBlue, brightGreen, brightRed, highlightColor, fontface;
+	classvar <colBg, <colPanel, <colText, <colDim, <colAccent;
+	classvar <colMeter, <colClip, <colOff, <colGrid, <colPeak, <colGood, <colRec;
+
+	var server, parent;
+
+	*initClass {
+		colBg     = Color(0.13, 0.13, 0.15);
+		colPanel  = Color(0.20, 0.20, 0.24);
+		colText   = Color(0.86, 0.87, 0.89);
+		colDim    = Color(0.55, 0.56, 0.62);
+		colAccent = Color(0.98, 0.65, 0.20);
+		colMeter  = Color(0.42, 0.76, 0.95);
+		colClip   = Color(0.95, 0.35, 0.30);
+		colOff    = Color(0.09, 0.10, 0.12);
+		colGrid   = Color(0.30, 0.33, 0.40);
+		colPeak   = Color(0.95, 0.96, 0.98);
+		colGood   = Color(0.40, 0.86, 0.60);
+		colRec    = Color(0.90, 0.25, 0.25);
+	}
 
 	*new {
 		|server, parent|
 		^super.newCopyArgs(server, parent).init();
 	}
 
-	*brightenColor {
-		|inColor, amt|
-		var color = Color.fromArray(inColor.asArray);
-		color.red = (color.red + amt).linlin(0,1,0,1);
-		color.green = (color.green + amt).linlin(0,1,0,1);
-		color.blue = (color.blue + amt).linlin(0,1,0,1);
-		^color
+	// ------------------------------------------------ the sibling extensions
+
+	*hasInsight { ^\Insight.asClass.notNil }
+
+	*hasRecorder { ^\BusRecorder.asClass.notNil }
+
+	// an insight on the main out of this server, window and all
+	*openInsight {
+		|server|
+		var cls = \Insight.asClass;
+		if (cls.isNil) { ^"ServerView: Insight is not installed".postln };
+		^cls.open(server)
+	}
+
+	// the recorder window: one per session, brought to front if it is up
+	*openRecorder {
+		var cls = \BusRecorder.asClass;
+		if (cls.isNil) { ^"ServerView: BusRecorder is not installed".postln };
+		^cls.gui
+	}
+
+	*hasMasterFx { ^\FxChain.asClass.notNil }
+
+	// the chain of effects on this server's main out - an eq and, when
+	// that extension is installed too, a compressor
+	*masterFx {
+		|server|
+		var cls = \FxChain.asClass;
+		if (cls.isNil) { ^"ServerView: ParaEQ (FxChain) is not installed".postln };
+		^cls.master(server)
+	}
+
+	// the same in a window of its own
+	*openMasterFx {
+		|server|
+		var chain = this.masterFx(server);
+		^chain.tryPerform(\gui)
 	}
 
 	init {
-		var mod = if (QtGUI.palette.window.asHSV[2] > 0.5) {-0.2} {0.2};
-		buttonColor = QtGUI.palette.button;
-		faintGreen = ServerWidgetBase.brightenColor(buttonColor.blend(Color.green, 0.2), mod);
-		faintRed = ServerWidgetBase.brightenColor(buttonColor.blend(Color.red, 0.25), mod);
-		faintYellow = ServerWidgetBase.brightenColor(buttonColor.blend(Color.yellow, 0.25), mod);
-		faintBlue = ServerWidgetBase.brightenColor(buttonColor.blend(Color.blue, 0.25), mod);
-
-		brightBlue = Color.hsv(0.555, 1, 0.6 + mod);
-		brightGreen = Color.hsv(0.277, 1, 0.6 + mod);
-		brightRed = Color.hsv(0.01, 1, 0.6 + mod);
-
-		highlightColor = Color.grey(0.7 + mod);
-
 		this.actions.do({
 			|action|
 			parent.registerKeyAction(action.key, action.action);
@@ -188,20 +249,36 @@ ServerWidgetBase {
 	}
 
 	font {
-		| size=12, bold=false |
-		if (fontface.isNil) {
-			var fonts = Font.availableFonts;
-			if (fonts.includesEqual("M+ 2c")) {
-				fontface = "M+ 2c";
-			} {
-				if (fonts.includesEqual("Helvetica Neue")) {
-					fontface = "Helvetica Neue"
-				} {
-					fontface = Font.defaultSansFace
-				}
-			};
-		}
-		^Font(fontface, size, bold);
+		| size = 11, bold = false |
+		^Font(Font.defaultSansFace, size, bold);
+	}
+
+	smallFont { ^this.font(9) }
+
+	boldFont { ^this.font(12, true) }
+
+	monoFont { ^Font(Font.defaultMonoFace, 11) }
+
+	// the n-th channel of a scope: the meter blue, a hue step further round
+	// for each channel so the traces can be told apart
+	channelColor {
+		|i|
+		var h, s, v, a;
+		#h, s, v, a = colMeter.asHSV;
+		^Color.hsv((h + (i * 0.68)).mod(1).clip(0, 1), s, v, a)
+	}
+
+	prLabel {
+		|str, width|
+		^StaticText().string_(str).font_(this.smallFont).stringColor_(colDim)
+			.fixedWidth_(width)
+	}
+
+	prButton {
+		|str, width, func|
+		^Button().fixedWidth_(width).states_([[str, colText, colPanel]])
+			.canFocus_(false)
+			.action_({ func.value })
 	}
 
 	actions { ^[] }
@@ -242,18 +319,18 @@ ServerSelectorWidget : ServerWidgetBase {
 			ServerViewAction("Scope", 's',
 				{
 					var scopeWin = server.scope(server.options.numOutputBusChannels);
-					scopeWin.scopeView.waveColors = 10.collect {
-						| i |
-						var h, s, v, a;
-						#h, s, v, a = brightBlue.asHSV();
-						h = (h + (i * 0.68)).mod(1).min(1).max(0);
-						Color.hsv(h, s, v, a);
-					};
+					scopeWin.scopeView.waveColors = 10.collect { |i| this.channelColor(i) };
 				}
 			),
 
 			ServerViewAction("Frequency scope", 'f',
 				{ server.freqscope }),
+
+			ServerViewAction("Insight", 'i',
+				{ ServerWidgetBase.openInsight(server) }),
+
+			ServerViewAction("Recorder", 'r',
+				{ ServerWidgetBase.openRecorder }),
 
 			ServerViewAction("Dump OSC", 'd',
 				{ if (server.isLocal or: { server.inProcess }) { server.dumpOSC((server.dumpMode + 1) % 2) } }),
@@ -304,18 +381,24 @@ ServerSelectorWidget : ServerWidgetBase {
 
 			MenuAction("Scope", {
 				var scopeWin = server.scope(server.options.numOutputBusChannels);
-				scopeWin.scopeView.waveColors = 10.collect {
-					| i |
-					var h, s, v, a;
-					#h, s, v, a = brightBlue.asHSV();
-					h = (h + (i * 0.68)).mod(1).min(1).max(0);
-					Color.hsv(h, s, v, a);
-				};
+				scopeWin.scopeView.waveColors = 10.collect { |i| this.channelColor(i) };
 			}).shortcut_("s"),
 
 			MenuAction("Frequency scope", {
 				server.freqscope
 			}).shortcut_("f"),
+
+			MenuAction("Insight", {
+				ServerWidgetBase.openInsight(server)
+			}).shortcut_("i"),
+
+			MenuAction("Recorder", {
+				ServerWidgetBase.openRecorder
+			}).shortcut_("r"),
+
+			MenuAction("Master fx", {
+				ServerWidgetBase.openMasterFx(server)
+			}).shortcut_("x"),
 
 			MenuAction("Dump OSC", {
 				|m|
@@ -352,42 +435,41 @@ ServerSelectorWidget : ServerWidgetBase {
 		]
 	}
 
+	// The server's name is the window's title, the way "recorder" and
+	// "insight" head theirs: bold, accent while it runs, dim while it
+	// does not. It is also the menu of servers.
 	makeServerMenu {
 		var menu, button, onServersChanged;
 		var serverRunningConnection;
 
 		button = Button()
 					.canFocus_(false)
-					.fixedHeight_(26)
-					.fixedWidth_(240);
+					.fixedHeight_(24)
+					.minWidth_(120)
+					.toolTip_("the server this window shows - click for the others");
 
 		onServersChanged = {
 			|what, obj, server|
-			var string, serverName, color, displayedServer;
+			var displayedServer, running;
 
 			displayedServer = parent.server;
 
 			serverRunningConnection.free;
 			serverRunningConnection = displayedServer.signal(\serverRunning).connectTo(onServersChanged).defer;
 
-			serverName = "% %".format(
-				displayedServer.serverRunning.if("◎", "◉");
-				displayedServer.name.asString.toUpper
-			);
-
-			string = "% (%)".format(
-				serverName,
-				displayedServer.serverRunning.if("running", "stopped")
-			);
-			color = displayedServer.serverRunning.if(faintGreen, QtGUI.palette.buttonText.alpha_(0.6));
+			running = displayedServer.serverRunning;
 
 			button.states = [[
-				string,
-				color,
+				"% %  %".format(
+					running.if("◎", "◉"),
+					displayedServer.name,
+					running.if("running", "stopped")
+				),
+				running.if(colAccent, colDim),
 				Color.clear
 			]];
 
-			button.font = this.font(18, bold: displayedServer.serverRunning);
+			button.font = this.boldFont;
 		};
 
 		connections = connections.addAll([
@@ -420,15 +502,15 @@ ServerSelectorWidget : ServerWidgetBase {
 		var button;
 		button = Button()
 					.fixedSize_(32@20)
-					.states_([[nil, Color.clear, Color.grey.alpha_(0.2)]])
+					.states_([[nil, Color.clear, colPanel]])
 					.canFocus_(false)
-					.iconSize_(16);
+					.iconSize_(16)
+					.toolTip_("everything the window can do, with its keys");
 
 		if (\Material.asClass.notNil) {
-			button.icon_(Material("settings", 18, color:QtGUI.palette.buttonText.alpha_(0.5)))
+			button.icon_(Material("settings", 18, color: colDim))
 		} {
-			button.fixedSize_(40@20);
-			button.states_([["☰", QtGUI.palette.buttonText.alpha_(0.5), QtGUI.palette.button.alpha_(0.2)]])
+			button.states_([["☰", colDim, colPanel]])
 		};
 
 		button.menu = Menu(*this.menuActions);
@@ -450,7 +532,7 @@ ServerSelectorWidget : ServerWidgetBase {
 			parent.server = servers[v.value];
 		};
 		serverList.maxHeight_(18);
-		serverList.font = this.font(12, false);
+		serverList.font = this.font(11);
 
 		^serverList
 	}
@@ -486,13 +568,13 @@ ServerSelectorWidget : ServerWidgetBase {
 				[serverList, \align: \left],
 				defaultButton = (Button()
 					.action_(this.defaultAction(_))
-					.maxHeight_(18).maxWidth_(22)
+					.fixedSize_(22@20)
 					.canFocus_(false)
-					.font_(this.font(12, true))
+					.toolTip_("make this the default server")
 				),
 				nil,
 				optionsMenu
-			).margins_(0).spacing_(0)
+			).margins_(0).spacing_(4)
 		);
 
 		this.onDefault();
@@ -519,12 +601,12 @@ ServerSelectorWidget : ServerWidgetBase {
 	onDefault {
 		if (Server.default == server) {
 			defaultButton
-				.states_([["D", faintGreen, Color.grey.alpha_(0.2)]])
-				.font_(this.font(12, true))
+				.states_([["D", Color.black, colAccent]])
+				.font_(this.font(10, true))
 		} {
 			defaultButton
-				.states_([["D", nil, Color.grey.alpha_(0.2)]])
-				.font_(this.font(11, false, Color.grey.alpha_(0.2)))
+				.states_([["D", colDim, colPanel]])
+				.font_(this.font(10))
 		}
 	}
 
@@ -552,7 +634,7 @@ ServerStatusWidget : ServerWidgetBase {
 		};
 		counterViews = List();
 		trackedCounts.do({|c|
-			counters[c].view.background_(ServerWidgetBase.brightenColor(QtGUI.palette.window, -0.02));
+			counters[c].view.background_(colOff);
 			counterViews.add([ counters[c].view, columns:counters[c].span ]);
 			(counters[c].span - 1).do { counterViews.add(nil) }
 		});
@@ -575,27 +657,27 @@ ServerStatusWidget : ServerWidgetBase {
 	}
 
 	create_numUGens {
-		^GraphCounter("UGENS", "", this.font(8), brightBlue.alpha_(0.6), 0);
+		^GraphCounter("ugens", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
 	}
 
 	create_numSynths {
-		^GraphCounter("SYNTHS", "", this.font(8), brightBlue.alpha_(0.6), 0);
+		^GraphCounter("synths", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
 	}
 
 	create_numGroups {
-		^NumberCounter("GROUPS", "", this.font(8));
+		^NumberCounter("groups", "", this.smallFont);
 	}
 
 	create_numSynthDefs {
-		^NumberCounter("SYNTHDEFS", "", this.font(8));
+		^NumberCounter("synthdefs", "", this.smallFont);
 	}
 
 	create_avgCPU {
-		^GraphCounter("AVG CPU", "%", this.font(8), brightGreen, 0, 100, brightRed.alpha_(0.6));
+		^GraphCounter("avg cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
 	}
 
 	create_peakCPU {
-		^GraphCounter("PEAK CPU", "%", this.font(8), brightGreen, 0, 100, brightRed.alpha_(0.6));
+		^GraphCounter("peak cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
 	}
 }
 
@@ -608,17 +690,16 @@ NumberCounter {
 	}
 
 	init {
-		var mod = if (QtGUI.palette.window.asHSV[2] > 0.5) {-0.5} {0.3};
 		view = View().layout_(VLayout(
 			heading = (StaticText()
 				.string_(name)
 				.font_(font)
-				.stringColor_(Color.grey)
+				.stringColor_(ServerWidgetBase.colDim)
 				.align_(\center)
 			),
 			number = (StaticText()
 				.font_(font.boldVariant.size_(font.size + 2))
-				.stringColor_(Color.grey(0.7 + mod))
+				.stringColor_(ServerWidgetBase.colText)
 				.align_(\center)
 			)
 		).margins_(0).spacing_(0));
@@ -643,7 +724,6 @@ GraphCounter {
 	}
 
 	init {
-		var mod = if (QtGUI.palette.window.asHSV[2] > 0.5) {-0.5} {0.3};
 		xWarp = ControlSpec(0, 1);
 
 		history = LinkedList.newFrom(0 ! historySize);
@@ -651,12 +731,12 @@ GraphCounter {
 			heading = (StaticText()
 				.string_(name)
 				.font_(font)
-				.stringColor_(Color.grey)
+				.stringColor_(ServerWidgetBase.colDim)
 				.align_(\center)
 			),
 			number = (StaticText()
 				.font_(font.boldVariant.size_(font.size + 2))
-				.stringColor_(Color.grey(0.7 + mod))
+				.stringColor_(ServerWidgetBase.colText)
 				.align_(\center)
 				.visible_(units.notNil)
 			)
@@ -688,10 +768,10 @@ GraphCounter {
 			Pen.lineTo(1@0);
 			Pen.lineTo(0@0);
 			if (maxColor.notNil && (history.first.linlin(min, max, 0, 1) > 0.9)) {
-				Pen.fillColor = maxColor.alpha_(0.3);
+				Pen.fillColor = maxColor.copy.alpha_(0.3);
 				Pen.strokeColor = maxColor.blend(Color.white, 0.1).alpha_(0.8);
 			} {
-				Pen.fillColor = color.alpha_(0.3);
+				Pen.fillColor = color.copy.alpha_(0.3);
 				Pen.strokeColor = color.blend(Color.white, 0.1).alpha_(0.8);
 			};
 			Pen.draw(3);
@@ -753,37 +833,35 @@ VolumeWidget : ServerWidgetBase {
 		volSpec = [server.volume.min, server.volume.max, \db].asSpec;
 
 		view = View().layout_(
-			VLayout(
-				HLayout(
-					StaticText().font_(this.font(9)).string_("VOL:  "),
-					volumeSlider = (Slider()
-						.action_({ |v| server.volume_(volSpec.map(v.value).round(0.1)) })
-						.orientation_(\horizontal)
-						.maxHeight_(height)
-						.thumbSize_(height - 5)
-						.value_(volSpec.unmap(server.volume.volume))
-					),
-					volumeNum = (NumberBox()
-						.action_({ |v| server.volume_(v.value.round(0.1)) })
-						.font_(this.font().boldVariant)
-						.stringColor_(QtGUI.palette.windowText).normalColor_(QtGUI.palette.windowText)
-						.maxWidth_(48)
-						.maxHeight_(height - 2)
-						.value_(server.volume.volume)
-					),
-					muteButton = (Button()
-						.action_({ |v| (v.value == 1).if({ server.mute }, {server.unmute}) })
-						.font_(this.font())
-						.maxHeight_(height - 2).maxWidth_(22)
-						.canFocus_(false)
-						.states_([
-							["M"],
-							["M", nil, faintRed]
-						])
-					)
-				).margins_(0).spacing_(0),
-
-			).margins_(0).spacing_(0)
+			HLayout(
+				this.prLabel("vol", 22),
+				volumeSlider = (Slider()
+					.action_({ |v| server.volume_(volSpec.map(v.value).round(0.1)) })
+					.orientation_(\horizontal)
+					.fixedHeight_(height)
+					.thumbSize_(height - 5)
+					.value_(volSpec.unmap(server.volume.volume))
+					.toolTip_("the server's volume, in dB")
+				),
+				volumeNum = (NumberBox()
+					.action_({ |v| server.volume_(v.value.round(0.1)) })
+					.font_(this.font(11, true))
+					.fixedWidth_(48)
+					.fixedHeight_(height)
+					.value_(server.volume.volume)
+				),
+				muteButton = (Button()
+					.action_({ |v| (v.value == 1).if({ server.mute }, {server.unmute}) })
+					.font_(this.font(10))
+					.fixedWidth_(46).fixedHeight_(height)
+					.canFocus_(false)
+					.states_([
+						["mute", colText, colPanel],
+						["muted", Color.white, colClip]
+					])
+					.value_(server.volume.isMuted.binaryValue)
+				)
+			).margins_(0).spacing_(4)
 		);
 		view.onClose_({ controller.remove() });
 
@@ -796,6 +874,7 @@ RecordWidget : ServerWidgetBase {
 	var view, pathString, <recPath, timeString, timeRoutine, busInput, channelsInput, channelsInputText;
 
 	*initClass {
+		Class.initClassTree(ServerWidgetBase);
 		recIcon = Image(16).draw({ this.drawRec(14) });
 		stopIcon = Image(16).draw({ this.drawStop(16) });
 	}
@@ -808,7 +887,7 @@ RecordWidget : ServerWidgetBase {
 		| size |
 		Pen.stringCenteredIn("▨", Rect(0,1,size,size),
 			font: Font(size:14),
-			color: QtGUI.palette.buttonText
+			color: colText
 		);
 	}
 
@@ -816,7 +895,7 @@ RecordWidget : ServerWidgetBase {
 		| size |
 		Pen.stringCenteredIn("●", Rect(0,1,size,size),
 			font: Font(size:14),
-			color: Color.hsv(0, 0.8, 0.9)
+			color: colRec
 		);
 	}
 
@@ -860,20 +939,18 @@ RecordWidget : ServerWidgetBase {
 	}
 
 	view {
-		var recButton, label, path, openButton, showButton;
-
-		label = StaticText().string_("REC:").font_(this.font(9));
+		var recButton, items;
 
 		pathString = (DragSink()
-			.font_(this.font(8))
-			.stringColor_(QtGUI.palette.windowText.alpha_(0.7))
-			.background_(QtGUI.palette.button.alpha_(0.8))
+			.font_(this.smallFont)
+			.stringColor_(colDim)
+			.background_(colPanel)
 			.fixedHeight_(20)
+			.toolTip_("where the file goes - click to open the folder, drop a folder here to change it")
 		);
 		pathString.mouseUpAction = {
-			if (thisProcess.platformClass == OSXPlatform) {
-				"open '%'".format(this.resolvedRecFolder()).unixCmdGetStdOut();
-			}
+			// openOS is the platform's own: open on macOS, start on Windows, xdg-open on Linux
+			this.resolvedRecFolder().openOS;
 		};
 		pathString.canReceiveDragHandler = { View.currentDrag.asString.pathExists == \folder };
 		pathString.receiveDragHandler = {
@@ -882,53 +959,67 @@ RecordWidget : ServerWidgetBase {
 		this.updateRecPathString();
 
 		busInput = (NumberBox()
-			.font_(this.font(8))
-			.stringColor_(QtGUI.palette.windowText.alpha_(0.7))
-			.background_(QtGUI.palette.button.alpha_(0.8))
+			.font_(this.smallFont)
 			.align_(\right)
 			.fixedWidth_(20)
 			.fixedHeight_(20)
+			.toolTip_("the first bus to record")
 		);
 		busInput.value = 0;
 
 		channelsInputText = StaticText()
 			.string_("⁝")
 			.font_(this.font(12))
-			.stringColor_(QtGUI.palette.windowText.alpha_(0.7))
+			.stringColor_(colDim)
 			.align_(\center)
 			.fixedWidth_(6)
 			.fixedHeight_(20);
 		channelsInput = (NumberBox()
-			.font_(this.font(8))
-			.stringColor_(QtGUI.palette.windowText.alpha_(0.7))
-			.background_(QtGUI.palette.button.alpha_(0.8))
+			.font_(this.smallFont)
 			.align_(\right)
 			.fixedWidth_(20)
 			.fixedHeight_(20)
+			.toolTip_("how many channels")
 		);
 		channelsInput.value = server.options.numOutputBusChannels;
 
 		timeString = (TextField()
-			.font_(this.font(11, true))
+			.font_(this.monoFont)
 			.align_(\right)
-			.stringColor_(QtGUI.palette.windowText)
+			.stringColor_(colText)
 			.background_(Color.clear)
-			.fixedWidth_(75)
+			.fixedWidth_(52)
 			.fixedHeight_(20)
 		);
 
 		recButton = Button()
-						.states_([[nil, Color.clear, Color.clear]])
+						.states_([[nil, Color.clear, colPanel]])
 						.fixedSize_(20@20)
-						.canFocus_(false);
+						.canFocus_(false)
+						.toolTip_("record these buses to a file in that folder");
 		recButton.icon = recIcon;
 
 		recButton.mouseUpAction = this.buttonClicked(_);
 
-		view = View().layout_(HLayout(
-			label, pathString,
-			5, timeString, HLayout(busInput, channelsInputText, channelsInput).spacing_(0).margins_(0), recButton
-		).margins_(0).spacing_(9));
+		items = [
+			this.prLabel("rec", 22), pathString,
+			timeString, HLayout(busInput, channelsInputText, channelsInput).spacing_(0).margins_(0), recButton
+		];
+
+		// BusRecorder (the sc-recorder extension) is optional: the button
+		// only exists when the class does, so this runs without it.
+		if (ServerWidgetBase.hasRecorder) {
+			items = items.add(
+				Button().fixedSize_(20@20)
+					.font_(this.font(9, true))
+					.canFocus_(false)
+					.states_([["r", colText, colPanel]])
+					.toolTip_("Recorder: record any set of buses to disk, and a window to do it from")
+					.action_({ ServerWidgetBase.openRecorder })
+			);
+		};
+
+		view = View().layout_(HLayout(*items).margins_(0).spacing_(4));
 
 		server.signal(\recording).connectTo({
 			|server, what, state|
@@ -949,6 +1040,156 @@ RecordWidget : ServerWidgetBase {
 		});
 
 		^view
+	}
+}
+
+// =====================================================================
+// MasterFXWidget - the chain of effects on the main out, under the counters
+//
+//   fx [ open ]  eq on · compressor off
+//
+// One row: a button that opens the chain in a window of its own - the
+// same window `FxChain.master.gui` opens, the eq and the compressor and
+// their hint bar in it - and a line that says what the chain is doing
+// while that window is closed or behind something else. The button is
+// lit while the window is up, and pressing it again closes it; so does
+// the `x` key. It works the way the `i` button opens Insight, which is
+// the other window this one keeps a light for.
+//
+// The chain itself is made the first time the window is opened and lives
+// on after it is closed: its nodes are on the server, not in the window.
+//
+// The whole widget only exists when FxChain is compiled in - see
+// ServerView:initClass - and everything inside it reaches that class by
+// name, so this file compiles without the extension.
+// =====================================================================
+
+MasterFXWidget : ServerWidgetBase {
+	var view, fxButton, statusText;
+	var chain, controller, unitControllers;
+
+	actions {
+		^[ServerViewAction("Master fx", 'x', { this.toggle })]
+	}
+
+	view {
+		fxButton = Button()
+			.fixedWidth_(46).fixedHeight_(20)
+			.canFocus_(false)
+			.font_(this.font(10, true))
+			.states_([["fx", colText, colPanel], ["fx", Color.black, colAccent]])
+			.toolTip_("the effects on the main out: an eq and a compressor - click for their window, again to close it")
+			.action_({ |b| this.toggle(b.value == 1) });
+		statusText = StaticText().font_(this.smallFont).stringColor_(colDim);
+
+		view = View().layout_(
+			HLayout(fxButton, statusText, nil).margins_(0).spacing_(6)
+		);
+
+		// the chain may already exist - made from code, or by an earlier
+		// window - in which case the line reads it from the start, and the
+		// button is lit if that window is open
+		\FxChain.asClass !? { |cls|
+			cls.at(("master_" ++ server.name).asSymbol) !? { |c| this.prWatch(c) };
+		};
+		this.prRefreshStatus;
+		this.prRefreshButton;
+
+		view.onClose_({ this.prUnwatch });
+
+		^view
+	}
+
+	// -------------------------------------------------------------- open
+
+	toggle {
+		|bool|
+		if (bool ? this.isOpen.not) { this.open } { this.close };
+	}
+
+	// The window is the chain's own, so it comes back where it was left,
+	// and closing it leaves everything running. Making the chain is what
+	// puts its group on the server, which is why nothing is made until
+	// this is pressed.
+	open {
+		var c = chain ?? { ServerWidgetBase.masterFx(server) };
+		if (c.isNil or: { c.isString }) { ^this.prRefreshButton };
+		if (chain !== c) { this.prWatch(c) };
+		c.tryPerform(\gui);
+		this.prRefreshButton;
+	}
+
+	close {
+		chain !? (_.tryPerform(\closeGui));
+		this.prRefreshButton;
+	}
+
+	isOpen { ^chain.notNil and: { chain.tryPerform(\guiObj).notNil } }
+
+	// The chain announces \gui whichever way its window went, so the light
+	// is right whether the window was opened from here, from the options
+	// menu or from code, and goes out when it is closed from its own
+	// corner.
+	prRefreshButton {
+		if (fxButton.isNil or: { fxButton.isClosed }) { ^this };
+		fxButton.value = this.isOpen.binaryValue;
+	}
+
+	// ------------------------------------------------------------ status
+
+	// one line: each effect and whether it is on, whatever the chain is
+	// doing while its window is closed
+	prWatch {
+		|c|
+		this.prUnwatch;
+		chain = c;
+		controller = SimpleController(chain)
+			.put(\units, { { this.prWatchUnits; this.prRefreshStatus }.defer })
+			.put(\enabled, { { this.prRefreshStatus }.defer })
+			.put(\nodes, { { this.prRefreshStatus }.defer })
+			.put(\gui, { { this.prRefreshButton }.defer })
+			.put(\freed, {
+				{
+					chain = nil;
+					this.prUnwatch;
+					this.prRefreshStatus;
+					this.prRefreshButton;
+				}.defer
+			});
+		this.prWatchUnits;
+	}
+
+	prWatchUnits {
+		unitControllers.do(_.remove);
+		unitControllers = chain !? {
+			chain.units.collect { |u|
+				SimpleController(u)
+					.put(\enabled, { { this.prRefreshStatus }.defer })
+					.put(\node, { { this.prRefreshStatus }.defer })
+			}
+		} ? [];
+	}
+
+	prUnwatch {
+		controller !? (_.remove);
+		controller = nil;
+		unitControllers.do(_.remove);
+		unitControllers = [];
+	}
+
+	prRefreshStatus {
+		var parts;
+		if (statusText.isNil or: { statusText.isClosed }) { ^this };
+		if (chain.isNil) {
+			statusText.string = "eq and compressor on the main out - not made yet";
+			^this
+		};
+		parts = chain.units.collect { |u|
+			"% %".format(u.label.toLower, if (u.enabled) { "on" } { "off" })
+		};
+		if (chain.enabled.not) { parts = parts.addFirst("chain off") };
+		if (chain.units.isEmpty) { parts = ["nothing in the chain"] };
+		statusText.string = parts.join(" · ");
 	}
 }
 
@@ -1117,6 +1358,10 @@ ScopeWidget : ServerWidgetBase {
 				.minWidth_(2)
 				.stepWidth_(1)
 				.style_(1)
+				.background_(colOff)
+				.meterColor_(colMeter)
+				.warningColor_(colAccent)
+				.criticalColor_(colClip)
 				.warning_(-6.dbamp)
 				.critical_(-0.1.dbamp)
 				.drawsPeak_(true)
@@ -1143,17 +1388,35 @@ ScopeWidget : ServerWidgetBase {
 
 		levelsName = (server.name ++ "OutputWidgetLevels");
 
-		view = View().layout_(HLayout(
+		subviews = [
 			inMetersView = View().layout_(HLayout().margins_(0).spacing_(0)),
 			[scopeView = ScopeView(), stretch:2],
 			outMetersView = View().layout_(HLayout().margins_(0).spacing_(0))
-		).margins_(0).spacing_(1));
+		];
+
+		// Insight (the sc-insight extension) is optional: the button only
+		// exists when the class does, so this compiles and runs without it.
+		if (ServerWidgetBase.hasInsight) {
+			subviews = subviews.add(
+				View().fixedWidth_(20).layout_(VLayout(
+					Button().fixedSize_(20@20)
+						.font_(this.font(9, true))
+						.canFocus_(false)
+						.states_([["i", colText, colPanel]])
+						.toolTip_("Insight: spectrum, loudness and image of the main out")
+						.action_({ ServerWidgetBase.openInsight(server) }),
+					nil
+				).margins_(0).spacing_(0))
+			);
+		};
+
+		view = View().layout_(HLayout(*subviews).margins_(0).spacing_(1));
 
 		this.initPrefs();
 
 		scopeView.server = server;
 		scopeView.canFocus = true;
-		scopeView.background = QtGUI.palette.window;
+		scopeView.background = colOff;
 
 		ServerTree.add(this, server);
 		ServerQuit.add(this, server);
@@ -1202,7 +1465,9 @@ ScopeWidget : ServerWidgetBase {
 			|out|
 			var sig, imp, peak, max, output;
 			sig = [
-				SoundIn.ar((0..this.inChannels-1)),
+				// (0..n-1) counts down when n is 0, so no inputs would meter [0, -1]:
+				// two channels too many, written past outBus, every out meter shifted
+				if (this.inChannels > 0) { SoundIn.ar((0..this.inChannels-1)) } { [] },
 				In.ar(0, this.outChannels)
 			].flatten;
 
@@ -1243,30 +1508,36 @@ ScopeWidget : ServerWidgetBase {
 			bus = Bus(rate, index, this.scopeChannels, server);
 		};
 		if (synth.isPlaying.not) {
-			scopeView.stop();
+			// ServerTree runs this off the GUI thread, so every scopeView
+			// (Qt) call has to be deferred or the primitive fails.
+			var bufIndex = synth.bufferIndex;
+			var colors = this.scopeChannels.collect { |i| this.channelColor(i) };
 
-			scopeView.server = server;
-			scopeView.bufnum = synth.bufferIndex;
-			scopeView.style = 1;
-			scopeView.yZoom = 0.9;
-			scopeView.waveColors = this.scopeChannels.collect {
-				| i |
-				var h, s, v, a;
-				#h, s, v, a = brightBlue.asHSV();
-				h = (h + (i * 0.68)).mod(1).min(1).max(0);
-				Color.hsv(h, s, v, a);
-			};
+			{
+				if (scopeView.notNil) {
+					scopeView.stop();
 
-			scopeView.start();
+					scopeView.server = server;
+					scopeView.bufnum = bufIndex;
+					scopeView.style = 1;
+					scopeView.yZoom = 0.9;
+					scopeView.waveColors = colors;
+
+					scopeView.start();
+				}
+			}.defer;
+
 			synth.play(2048, bus, cycle);
 			this.playLevelSynth();
 		}
 	}
 
 	stopSynth {
-		scopeView.stop();
+		// ServerQuit runs this off the GUI thread. Deferring keeps the Qt
+		// call from throwing and aborting the cleanup below it.
+		{ if (scopeView.notNil) { scopeView.stop() } }.defer;
 		synth.free; bus.free; outBus.free; levelSynth.free; outresp.free;
-		levelSynth = synth = bus = outBus = nil;
+		levelSynth = synth = bus = outBus = outresp = nil;
 	}
 
 	restartSynth {
@@ -1351,8 +1622,9 @@ HistoryWidget : ServerWidgetBase {
 	view {
 		var view;
 
-		counter = GraphCounter("PEAK DB", nil, this.font(8), brightGreen, 0.0, 1.0, historySize:160);
+		counter = GraphCounter("peak", nil, this.smallFont, colGood, 0.0, 1.0, historySize:160);
 		view = counter.view;
+		view.background_(colOff);
 		view.minHeight_(40);
 
 		if (server.serverBooting.not && server.serverRunning) {
