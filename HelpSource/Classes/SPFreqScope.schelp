@@ -1,0 +1,93 @@
+TITLE:: SPFreqScope
+summary:: the server's frequency scope, in ServerPanel's colours, with a frequency and dB grid
+categories:: Libraries>ServerPanel
+related:: Classes/SPScope, Classes/ServerPanel, Classes/FreqScope, Classes/FreqScopeView
+
+DESCRIPTION::
+What code::s.freqscope:: opens, drawn the way link::Classes/ServerPanel:: is. The grid has the frequencies (20, 50, 100 ... on a logarithmic scale, every kHz on a linear one) and the dB, 0 at the top. Point at the spectrum and the top row reads out the frequency, the nearest note with its cents, and the level.
+
+What it changes against the stock one:
+list::
+## it reads a stereo bus: left and right summed, or one of them (the stock scope reads one channel);
+## the fft size is free (2048, 4096, 8192), and the level stays the same at every size: a sine at -6 dBFS reads -6.4 to -6.7 dB at all three (measured 2026-11-05);
+## the window resizes, and the spectrum stays on its grid at any width: a tone lands on its frequency to the bin in every mode and size (measured 2026-11-05, 100 Hz to 15 kHz).
+::
+
+There is one per server: asking again brings the open window to the front. ServerPanel's code::f:: key and its options menu open it. It survives cmd + period and a reboot, and frees its synth and scope buffer when it closes. It needs a server on this machine (shared memory).
+
+code::
+s.boot;
+SPFreqScope(s);                  // the main out, left and right summed
+SPFreqScope(s).source = 1;       // left only (2: right)
+SPFreqScope(s).freqMode = 0;     // 0 linear, 1 logarithmic
+SPFreqScope(s).dbRange = 72;     // how far down the bottom of the grid is
+SPFreqScope(s).fftSize = 8192;   // finer at the bottom, slower to move
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+The frequency scope of a server, opened if it is not.
+ARGUMENT:: server
+A link::Classes/Server::; code::Server.default:: when nil.
+RETURNS:: an SPFreqScope
+
+METHOD:: synthDef
+The analysis, named code::sp_freqscope0:: (linear) or code::sp_freqscope1:: (logarithmic).
+ARGUMENT:: mode
+0 or 1.
+RETURNS:: a link::Classes/SynthDef::
+
+METHOD:: fftSizes
+The sizes the window offers.
+
+METHOD:: dbRanges
+The ranges the window offers.
+
+METHOD:: frames
+How many points one sweep of the spectrum is drawn with: 2048, enough for a window up to 2048 pixels wide.
+
+INSTANCEMETHODS::
+
+METHOD:: inBus
+The first of the two busses analysed.
+
+METHOD:: source
+0 both channels summed (halved), 1 the left, 2 the right.
+
+METHOD:: freqMode
+0 linear, 1 logarithmic.
+
+METHOD:: dbRange
+How many dB the height of the grid covers.
+
+METHOD:: fftSize
+The fft size, a power of two.
+
+METHOD:: freqToX
+Where a frequency is across the width.
+ARGUMENT:: f
+In Hz.
+RETURNS:: 0 at the left edge, 1 at the right
+
+METHOD:: xToFreq
+The other way round.
+ARGUMENT:: p
+0 to 1.
+RETURNS:: a frequency in Hz
+
+METHOD:: nyquist
+Half the server's sample rate.
+
+METHOD:: running
+Whether the scope runs. Paused, it has no synth on the server.
+
+METHOD:: front
+Bring the window to the front.
+
+METHOD:: close
+Close the window, freeing the synth and the scope buffer.
+
+METHOD:: isOpen
+Whether the window is up.
+RETURNS:: a link::Classes/Boolean::

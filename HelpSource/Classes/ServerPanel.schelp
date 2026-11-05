@@ -1,0 +1,92 @@
+TITLE:: ServerPanel
+summary:: a compact server window: counters, meters, scope, volume, recorder
+categories:: Libraries>ServerPanel
+related:: Classes/SPScope, Classes/SPFreqScope, Classes/Server, Classes/Singleton
+
+DESCRIPTION::
+ServerPanel is a fork of Scott Carver's ServerView quark (link::https://github.com/scztt/ServerView.quark::), with its classes renamed so the two can be installed side by side. Both take over the window the server opens on boot, so keep one of them.
+
+ServerPanel is a replacement for the standard SuperCollider server gui. It has a cleaner and more compact look, it supports multiple servers, and displays graphs of CPU usage, Synth counts, as well as a scope and input/output levels.
+
+The window is drawn in a dark palette of its own, in the system sans-serif face, so it looks the same on every machine and the same as the BusRecorder and Insight windows it can open.
+
+SECTION:: Keyboard shortcuts / interaction
+
+TABLE::
+## p || Show the node tree: NodeSnapshot's live view when that quark is installed, code::s.plotTree:: when it is not
+## n || Dump all node information to post window (code::s.queryAllNodes(true)::)
+## l || Show level meters window.
+## b || Boot server (if not already running)
+## s || Open an link::Classes/SPScope::, the oscilloscope in the same colours
+## f || Open an link::Classes/SPFreqScope::, the frequency scope in the same colours
+## i || Open an Insight window on the main out (needs the sc-insight extension; the code::i:: button by the meters does the same)
+## r || Open the BusRecorder window (needs the sc-recorder extension; the code::r:: button in the record row does the same)
+## x || Open the master fx chain - an eq and a compressor on the main out - in a window of its own, and close it again (needs the ParaEQ extension; the code::fx:: button under the counters does the same, and is lit while that window is up)
+## d || Enable / disable dumping of OSC messages
+## m || Mute server volume
+## 0 || Reset server volume to 0dB
+::
+
+Horizontal / vertical mouse wheel or scroll actions over the scope will zoom horizontally and vertically.
+
+Clicking graph widgets will reset their bounds.
+
+Clicking the server name will boot / kill the server.
+
+
+SECTION:: Adding widgets.
+
+ServerPanel is populated by widgets that must be subclasses of link::Classes/SPWidgetBase::. To add a new widget type to the ServerPanel:
+
+1. Create a subclass of link::Classes/SPWidgetBase::. It should not implement a constructor, and must implement a code::view:: method that returns a valid link::Classes/View::.
+
+2. Add the class to link::#*widgets:: in your startup file, or any time before a ServerPanel is created.
+
+
+CLASSMETHODS::
+
+METHOD:: new
+Create a new ServerPanel
+
+ARGUMENT:: key
+A link::Classes/Symbol:: or other IdentityDictionary-appropriate object used to identify the ServerPanel. See link::Singleton#-new:: for behavior. Unless you need multiple ServerPanel's, no argument is required.
+
+METHOD:: widgets
+
+ARGUMENT:: widgetlist
+A list of subclasses of SPWidgetBase to be displayed in the ServerPanel. By default, it contains SPStatusWidget, SPVolumeWidget, SPScopeWidget. Set this in your startup file to enable alternative configurations of widgets.
+
+INSTANCEMETHODS::
+
+METHOD:: close
+Close the view;
+
+COPYMETHOD:: View -onClose
+
+METHOD:: front
+Bring ServerPanel to front. If this ServerPanel has not been created yet, create it.
+
+METHOD:: registerKeyAction
+Add a keyboard action to the ServerPanel.
+
+ARGUMENT:: key
+A link::Classes/Char:: representing an ascii key.
+
+ARGUMENT:: action
+A function to execute when key is detected.
+
+
+EXAMPLES::
+
+ServerPanel works as a singleton, so the default constructor will always refer to the same object.
+code::
+
+ServerPanel().front;
+
+ServerPanel().close;
+::
+
+
+
+
+

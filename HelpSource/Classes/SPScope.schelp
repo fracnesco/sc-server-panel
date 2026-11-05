@@ -1,0 +1,75 @@
+TITLE:: SPScope
+summary:: the server's oscilloscope, in ServerPanel's colours, with a grid and a readout
+categories:: Libraries>ServerPanel
+related:: Classes/SPFreqScope, Classes/ServerPanel, Classes/Stethoscope, Classes/ScopeView
+
+DESCRIPTION::
+What code::s.scope:: opens, drawn the way link::Classes/ServerPanel:: is: the dark palette, a row of controls along the top and a grid over the trace. The grid has a lane per channel with the channel's bus number in its colour, lines at 0.5 and 1 (they move with the zoom), eight time divisions and the time the screen holds in milliseconds. Point at the trace and the top row reads out the channel, the level and the time under the pointer.
+
+There is one per server: asking again brings the open window to the front. ServerPanel's code::s:: key and its options menu open it. The window survives cmd + period and a reboot, and frees its synth and scope buffer when it closes.
+
+It reads the server's scope buffer through shared memory, as link::Classes/Stethoscope:: does, so it needs a server on this machine.
+
+code::
+s.boot;
+SPScope(s);                                // the main out, every channel
+SPScope(s).index_(8).numChannels_(2);      // any bus
+SPScope(s).style = 1;                      // 0 separate, 1 overlaid, 2 x y
+::
+
+subsection:: In the window
+
+table::
+## strong::run:: || run or pause; space does the same
+## strong::out::, strong::in:: || the hardware outputs, the hardware inputs
+## strong::bus::, strong::ch:: || the first bus shown, and how many
+## audio / control || which kind of bus
+## separate / overlay / x y || a lane per channel, all in one, or the first two against each other
+## strong::frames:: || how many samples the screen holds; the mouse wheel sideways, or shift + wheel
+## strong::zoom:: || the level zoom; the mouse wheel up and down
+## escape || closes the window
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+The scope of a server, opened if it is not.
+ARGUMENT:: server
+A link::Classes/Server::; code::Server.default:: when nil.
+RETURNS:: an SPScope
+
+METHOD:: maxFrames
+The most frames the screen can hold: 4096.
+
+INSTANCEMETHODS::
+
+METHOD:: index
+The first bus shown. Setting it restarts the scope's synth.
+
+METHOD:: rate
+code::\audio:: or code::\control::.
+
+METHOD:: numChannels
+How many busses from link::#-index:: on, 1 to 32.
+
+METHOD:: style
+0 separate, 1 overlaid, 2 x y.
+
+METHOD:: cycle
+How many samples the screen holds, 64 to link::#*maxFrames::.
+
+METHOD:: yZoom
+The level zoom: at 2, a lane runs from -0.5 to 0.5.
+
+METHOD:: running
+Whether the scope runs. Paused, it has no synth on the server.
+
+METHOD:: front
+Bring the window to the front.
+
+METHOD:: close
+Close the window, freeing the synth and the scope buffer.
+
+METHOD:: isOpen
+Whether the window is up.
+RETURNS:: a link::Classes/Boolean::

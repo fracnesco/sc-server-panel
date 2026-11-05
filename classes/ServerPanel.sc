@@ -1,4 +1,4 @@
-ServerView : Singleton {
+ServerPanel : Singleton {
 	classvar panelTypes, <>widgets, <actions, <>border=true,
 	showOnBoot=true, serverViewShown=false;
 	var <>view, <window, widgetLayout, server, <>widgets, containers;
@@ -7,9 +7,9 @@ ServerView : Singleton {
 		panelTypes = IdentityDictionary();
 		// the master fx row sits under the counters, and only exists
 		// when the ParaEQ extension - FxChain - is compiled in
-		widgets = List[ServerStatusWidget]
-			++ (if (\FxChain.asClass.notNil) { [MasterFXWidget] } { [] })
-			++ [ScopeWidget, HistoryWidget, VolumeWidget, RecordWidget];
+		widgets = List[SPStatusWidget]
+			++ (if (\FxChain.asClass.notNil) { [SPMasterFxWidget] } { [] })
+			++ [SPScopeWidget, SPHistoryWidget, SPVolumeWidget, SPRecordWidget];
 		actions = IdentityDictionary();
 
 		ServerBoot.add(this);
@@ -22,12 +22,12 @@ ServerView : Singleton {
 		|server|
 		if (showOnBoot && serverViewShown.not) {
 			serverViewShown = true;
-			ServerView().front;
+			ServerPanel().front;
 		};
 
 		if (Server.all.select(_.serverRunning).size == 0) {
 			// If no other servers running, set this one to display
-			ServerView().server = server;
+			ServerPanel().server = server;
 		}
 	}
 
@@ -61,14 +61,14 @@ ServerView : Singleton {
 
 	createView {
 		window = Window("server", Rect(0, 0, 265, 200), resizable:true, border:border);
-		window.autoRememberPosition(\ServerView);
+		window.autoRememberPosition(\ServerPanel);
 		view = window.view.minWidth_(265).minHeight_(200);
 
 		// the dark palette every module window is drawn in, so the Qt
 		// widgets that are not coloured by hand - sliders, menus, number
 		// boxes - come out the same as theirs
 		if (GUI.id == \qt) { view.palette = QPalette.dark };
-		view.background = ServerWidgetBase.colBg;
+		view.background = SPWidgetBase.colBg;
 
 		view.keyDownAction_({
 			|v, char|
@@ -95,7 +95,7 @@ ServerView : Singleton {
 		containers = List();
 		widgets = List();
 
-		([ServerSelectorWidget] ++ this.class.widgets).do {
+		([SPSelectorWidget] ++ this.class.widgets).do {
 			|wClass, i|
 			var container, widget;
 			widget = wClass.new(this.server, this).view();
@@ -107,7 +107,7 @@ ServerView : Singleton {
 						UserView().fixedHeight_(10).drawFunc_({
 							|v|
 							var y = (v.bounds.height / 2).round + 0.5;
-							Pen.strokeColor = ServerWidgetBase.colGrid.copy.alpha_(0.5);
+							Pen.strokeColor = SPWidgetBase.colGrid.copy.alpha_(0.5);
 							Pen.width = 1;
 							Pen.line(2@y, (v.bounds.width - 2)@y);
 							Pen.stroke();
@@ -141,7 +141,7 @@ ServerView : Singleton {
 	registerKeyAction {
 		| key, action |
 		// if (actions[key].notNil) {
-		// 	"ServerView - Overriding an existing action for key %".format(key).warn;
+		// 	"ServerPanel - Overriding an existing action for key %".format(key).warn;
 		// };
 		actions[key] = action;
 	}
@@ -161,7 +161,7 @@ ServerView : Singleton {
 }
 
 // =====================================================================
-// ServerWidgetBase - what every ServerView widget is built from
+// SPWidgetBase - what every ServerPanel widget is built from
 //
 // The colours and fonts are the ones the module family's windows are
 // drawn in - BusRecorderGUI, InsightGUI, ModulePalette keep the same
@@ -171,12 +171,12 @@ ServerView : Singleton {
 //
 // Insight, BusRecorder and the master fx chain (FxChain, from the
 // ParaEQ extension) are optional. Each is looked up by name at runtime
-// and never referenced directly, so ServerView compiles and runs
+// and never referenced directly, so ServerPanel compiles and runs
 // without them; the buttons and rows that open them only exist when
 // the class does.
 // =====================================================================
 
-ServerWidgetBase {
+SPWidgetBase {
 	classvar <colBg, <colPanel, <colText, <colDim, <colAccent;
 	classvar <colMeter, <colClip, <colOff, <colGrid, <colPeak, <colGood, <colRec;
 
@@ -212,15 +212,23 @@ ServerWidgetBase {
 	*openInsight {
 		|server|
 		var cls = \Insight.asClass;
-		if (cls.isNil) { ^"ServerView: Insight is not installed".postln };
+		if (cls.isNil) { ^"ServerPanel: Insight is not installed".postln };
 		^cls.open(server)
 	}
 
 	// the recorder window: one per session, brought to front if it is up
 	*openRecorder {
 		var cls = \BusRecorder.asClass;
-		if (cls.isNil) { ^"ServerView: BusRecorder is not installed".postln };
+		if (cls.isNil) { ^"ServerPanel: BusRecorder is not installed".postln };
 		^cls.gui
+	}
+
+	// the node tree: NodeSnapshot's live view when that quark is there,
+	// the stock plotTree when it is not
+	*openTree {
+		|server|
+		if (server.serverRunning.not) { ^nil };
+		^\TreeSnapshotView.asClass !? { |cls| cls.new(server).autoUpdate().front() } ?? { server.plotTree }
 	}
 
 	*hasMasterFx { ^\FxChain.asClass.notNil }
@@ -230,7 +238,7 @@ ServerWidgetBase {
 	*masterFx {
 		|server|
 		var cls = \FxChain.asClass;
-		if (cls.isNil) { ^"ServerView: ParaEQ (FxChain) is not installed".postln };
+		if (cls.isNil) { ^"ServerPanel: ParaEQ (FxChain) is not installed".postln };
 		^cls.master(server)
 	}
 
@@ -261,12 +269,14 @@ ServerWidgetBase {
 
 	// the n-th channel of a scope: the meter blue, a hue step further round
 	// for each channel so the traces can be told apart
-	channelColor {
+	*channelColor {
 		|i|
 		var h, s, v, a;
 		#h, s, v, a = colMeter.asHSV;
 		^Color.hsv((h + (i * 0.68)).mod(1).clip(0, 1), s, v, a)
 	}
+
+	channelColor { |i| ^SPWidgetBase.channelColor(i) }
 
 	prLabel {
 		|str, width|
@@ -286,20 +296,20 @@ ServerWidgetBase {
 	view { this.subclassResponsibility('view') }
 }
 
-ServerViewAction {
+SPAction {
 	var <name, <key, <action;
 	*new { |name, key, action| ^super.newCopyArgs(name, key, action) }
 	value { |...args| action.value(*args) }
 	asString { ^name }
 }
 
-ServerSelectorWidget : ServerWidgetBase {
+SPSelectorWidget : SPWidgetBase {
 	var serverList, view, runningText, bootButton, defaultButton, optionsMenu, optionsView, controller, serverQuitView;
 	var connections;
 
 	actions {
 		var actions = [
-			ServerViewAction("Options", 'o', {
+			SPAction("Options", 'o', {
 				if (optionsView.isNil) {
 					optionsView = ServerOptionsGui(server);
 					optionsView.parent.autoRememberPosition(\ServerOptionsGui);
@@ -307,58 +317,54 @@ ServerSelectorWidget : ServerWidgetBase {
 				};
 			}),
 
-			ServerViewAction("Query nodes", 'n',
+			SPAction("Query nodes", 'n',
 				{ server.queryAllNodes(true) }),
 
-			ServerViewAction("Level meters", 'l',
+			SPAction("Level meters", 'l',
 				{ server.tryPerform(\meter) }),
 
-			ServerViewAction("Tree view", 'p',
-				{ if(server.serverRunning) { TreeSnapshotView(server).autoUpdate().front() } }),
+			SPAction("Tree view", 'p',
+				{ SPWidgetBase.openTree(server) }),
 
-			ServerViewAction("Scope", 's',
-				{
-					var scopeWin = server.scope(server.options.numOutputBusChannels);
-					scopeWin.scopeView.waveColors = 10.collect { |i| this.channelColor(i) };
-				}
-			),
+			SPAction("Scope", 's',
+				{ SPScope(server) }),
 
-			ServerViewAction("Frequency scope", 'f',
-				{ server.freqscope }),
+			SPAction("Frequency scope", 'f',
+				{ SPFreqScope(server) }),
 
-			ServerViewAction("Insight", 'i',
-				{ ServerWidgetBase.openInsight(server) }),
+			SPAction("Insight", 'i',
+				{ SPWidgetBase.openInsight(server) }),
 
-			ServerViewAction("Recorder", 'r',
-				{ ServerWidgetBase.openRecorder }),
+			SPAction("Recorder", 'r',
+				{ SPWidgetBase.openRecorder }),
 
-			ServerViewAction("Dump OSC", 'd',
+			SPAction("Dump OSC", 'd',
 				{ if (server.isLocal or: { server.inProcess }) { server.dumpOSC((server.dumpMode + 1) % 2) } }),
 
-			ServerViewAction("Mute", 'm',
+			SPAction("Mute", 'm',
 				{ if (server.volume.isMuted) { server.unmute } { server.mute } }),
 
-			ServerViewAction("Reset volume", '0',
+			SPAction("Reset volume", '0',
 				{ server.volume = 0 }),
 		];
 
 		actions = [
 
-			ServerViewAction("Boot", 'b',
+			SPAction("Boot", 'b',
 				{ if(server.serverRunning.not) { server.boot } }),
 
-			ServerViewAction("Reboot", 'none',
+			SPAction("Reboot", 'none',
 				{ if(server.serverRunning.not) { server.reboot } }),
 
-			ServerViewAction("Quit", 'none',
+			SPAction("Quit", 'none',
 				{ if(server.serverRunning) { server.quit } }),
 		] ++ actions;
 
 		actions = actions ++ [
-			ServerViewAction("Kill all servers", 'none',
+			SPAction("Kill all servers", 'none',
 				{ Server.killAll }),
-			ServerViewAction("Close Server View", 27.asAscii.asSymbol,
-				{ parent.window.rememberPosition(\ServerView); parent.close() }),
+			SPAction("Close server panel", 27.asAscii.asSymbol,
+				{ parent.window.rememberPosition(\ServerPanel); parent.close() }),
 
 		];
 
@@ -376,28 +382,27 @@ ServerSelectorWidget : ServerWidgetBase {
 			}).shortcut_("l"),
 
 			MenuAction("Tree view", {
-				if(server.serverRunning) { TreeSnapshotView(server).autoUpdate().front() }
+				SPWidgetBase.openTree(server)
 			}).shortcut_("p"),
 
 			MenuAction("Scope", {
-				var scopeWin = server.scope(server.options.numOutputBusChannels);
-				scopeWin.scopeView.waveColors = 10.collect { |i| this.channelColor(i) };
+				SPScope(server)
 			}).shortcut_("s"),
 
 			MenuAction("Frequency scope", {
-				server.freqscope
+				SPFreqScope(server)
 			}).shortcut_("f"),
 
 			MenuAction("Insight", {
-				ServerWidgetBase.openInsight(server)
+				SPWidgetBase.openInsight(server)
 			}).shortcut_("i"),
 
 			MenuAction("Recorder", {
-				ServerWidgetBase.openRecorder
+				SPWidgetBase.openRecorder
 			}).shortcut_("r"),
 
 			MenuAction("Master fx", {
-				ServerWidgetBase.openMasterFx(server)
+				SPWidgetBase.openMasterFx(server)
 			}).shortcut_("x"),
 
 			MenuAction("Dump OSC", {
@@ -430,7 +435,7 @@ ServerSelectorWidget : ServerWidgetBase {
 
 			MenuAction("Kill all servers", { Server.killAll }),
 			MenuAction("Close Window", {
-				parent.window.rememberPosition(\ServerView); parent.close()
+				parent.window.rememberPosition(\ServerPanel); parent.close()
 			})
 		]
 	}
@@ -612,7 +617,7 @@ ServerSelectorWidget : ServerWidgetBase {
 
 }
 
-ServerStatusWidget : ServerWidgetBase {
+SPStatusWidget : SPWidgetBase {
 	classvar <allCounters;
 	var view, controller, columns=3, trackedCounts, counters;
 
@@ -657,31 +662,31 @@ ServerStatusWidget : ServerWidgetBase {
 	}
 
 	create_numUGens {
-		^GraphCounter("ugens", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
+		^SPGraphCounter("ugens", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
 	}
 
 	create_numSynths {
-		^GraphCounter("synths", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
+		^SPGraphCounter("synths", "", this.smallFont, colMeter.copy.alpha_(0.6), 0);
 	}
 
 	create_numGroups {
-		^NumberCounter("groups", "", this.smallFont);
+		^SPNumberCounter("groups", "", this.smallFont);
 	}
 
 	create_numSynthDefs {
-		^NumberCounter("synthdefs", "", this.smallFont);
+		^SPNumberCounter("synthdefs", "", this.smallFont);
 	}
 
 	create_avgCPU {
-		^GraphCounter("avg cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
+		^SPGraphCounter("avg cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
 	}
 
 	create_peakCPU {
-		^GraphCounter("peak cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
+		^SPGraphCounter("peak cpu", "%", this.smallFont, colGood, 0, 100, colClip.copy.alpha_(0.6));
 	}
 }
 
-NumberCounter {
+SPNumberCounter {
 	var name, units, font, <view, heading, number, <>span=1;
 
 	*new {
@@ -694,12 +699,12 @@ NumberCounter {
 			heading = (StaticText()
 				.string_(name)
 				.font_(font)
-				.stringColor_(ServerWidgetBase.colDim)
+				.stringColor_(SPWidgetBase.colDim)
 				.align_(\center)
 			),
 			number = (StaticText()
 				.font_(font.boldVariant.size_(font.size + 2))
-				.stringColor_(ServerWidgetBase.colText)
+				.stringColor_(SPWidgetBase.colText)
 				.align_(\center)
 			)
 		).margins_(0).spacing_(0));
@@ -711,7 +716,7 @@ NumberCounter {
 	}
 }
 
-GraphCounter {
+SPGraphCounter {
 	var name, units, font, color, <>min, <>max, maxColor, <>minFixed=false, <>maxFixed=false, historySize, reverse,
 	<view, heading, number, history, <>span=1, <>round=0.1,
 	<>xWarp
@@ -731,12 +736,12 @@ GraphCounter {
 			heading = (StaticText()
 				.string_(name)
 				.font_(font)
-				.stringColor_(ServerWidgetBase.colDim)
+				.stringColor_(SPWidgetBase.colDim)
 				.align_(\center)
 			),
 			number = (StaticText()
 				.font_(font.boldVariant.size_(font.size + 2))
-				.stringColor_(ServerWidgetBase.colText)
+				.stringColor_(SPWidgetBase.colText)
 				.align_(\center)
 				.visible_(units.notNil)
 			)
@@ -810,7 +815,7 @@ GraphCounter {
 	}
 }
 
-VolumeWidget : ServerWidgetBase {
+SPVolumeWidget : SPWidgetBase {
 	var view, controller, volumeNum, volumeSlider, muteButton, volSpec, <>height=18;
 
 	view {
@@ -869,12 +874,12 @@ VolumeWidget : ServerWidgetBase {
 	}
 }
 
-RecordWidget : ServerWidgetBase {
+SPRecordWidget : SPWidgetBase {
 	classvar <recIcon, <stopIcon;
 	var view, pathString, <recPath, timeString, timeRoutine, busInput, channelsInput, channelsInputText;
 
 	*initClass {
-		Class.initClassTree(ServerWidgetBase);
+		Class.initClassTree(SPWidgetBase);
 		recIcon = Image(16).draw({ this.drawRec(14) });
 		stopIcon = Image(16).draw({ this.drawStop(16) });
 	}
@@ -1008,14 +1013,14 @@ RecordWidget : ServerWidgetBase {
 
 		// BusRecorder (the sc-recorder extension) is optional: the button
 		// only exists when the class does, so this runs without it.
-		if (ServerWidgetBase.hasRecorder) {
+		if (SPWidgetBase.hasRecorder) {
 			items = items.add(
 				Button().fixedSize_(20@20)
 					.font_(this.font(9, true))
 					.canFocus_(false)
 					.states_([["r", colText, colPanel]])
 					.toolTip_("Recorder: record any set of buses to disk, and a window to do it from")
-					.action_({ ServerWidgetBase.openRecorder })
+					.action_({ SPWidgetBase.openRecorder })
 			);
 		};
 
@@ -1044,7 +1049,7 @@ RecordWidget : ServerWidgetBase {
 }
 
 // =====================================================================
-// MasterFXWidget - the chain of effects on the main out, under the counters
+// SPMasterFxWidget - the chain of effects on the main out, under the counters
 //
 //   fx [ open ]  eq on · compressor off
 //
@@ -1060,16 +1065,16 @@ RecordWidget : ServerWidgetBase {
 // on after it is closed: its nodes are on the server, not in the window.
 //
 // The whole widget only exists when FxChain is compiled in - see
-// ServerView:initClass - and everything inside it reaches that class by
+// ServerPanel:initClass - and everything inside it reaches that class by
 // name, so this file compiles without the extension.
 // =====================================================================
 
-MasterFXWidget : ServerWidgetBase {
+SPMasterFxWidget : SPWidgetBase {
 	var view, fxButton, statusText;
 	var chain, controller, unitControllers;
 
 	actions {
-		^[ServerViewAction("Master fx", 'x', { this.toggle })]
+		^[SPAction("Master fx", 'x', { this.toggle })]
 	}
 
 	view {
@@ -1112,7 +1117,7 @@ MasterFXWidget : ServerWidgetBase {
 	// puts its group on the server, which is why nothing is made until
 	// this is pressed.
 	open {
-		var c = chain ?? { ServerWidgetBase.masterFx(server) };
+		var c = chain ?? { SPWidgetBase.masterFx(server) };
 		if (c.isNil or: { c.isString }) { ^this.prRefreshButton };
 		if (chain !== c) { this.prWatch(c) };
 		c.tryPerform(\gui);
@@ -1193,7 +1198,7 @@ MasterFXWidget : ServerWidgetBase {
 	}
 }
 
-ScopeWidget : ServerWidgetBase {
+SPScopeWidget : SPWidgetBase {
 	var view, <scopeView,
 	inMetersView, <inMeters, inMetersMenu, inChannels, inChannelsActions,
 	outMetersView, <outMeters, outMetersMenu, outChannels, outChannelsActions,
@@ -1386,7 +1391,7 @@ ScopeWidget : ServerWidgetBase {
 		var subviews,
 			inMenuContext, outMenuContext, scopeContext;
 
-		levelsName = (server.name ++ "OutputWidgetLevels");
+		levelsName = ("sp_" ++ server.name ++ "_levels");
 
 		subviews = [
 			inMetersView = View().layout_(HLayout().margins_(0).spacing_(0)),
@@ -1396,7 +1401,7 @@ ScopeWidget : ServerWidgetBase {
 
 		// Insight (the sc-insight extension) is optional: the button only
 		// exists when the class does, so this compiles and runs without it.
-		if (ServerWidgetBase.hasInsight) {
+		if (SPWidgetBase.hasInsight) {
 			subviews = subviews.add(
 				View().fixedWidth_(20).layout_(VLayout(
 					Button().fixedSize_(20@20)
@@ -1404,7 +1409,7 @@ ScopeWidget : ServerWidgetBase {
 						.canFocus_(false)
 						.states_([["i", colText, colPanel]])
 						.toolTip_("Insight: spectrum, loudness and image of the main out")
-						.action_({ ServerWidgetBase.openInsight(server) }),
+						.action_({ SPWidgetBase.openInsight(server) }),
 					nil
 				).margins_(0).spacing_(0))
 			);
@@ -1482,7 +1487,7 @@ ScopeWidget : ServerWidgetBase {
 			SendReply.ar(imp, "/" ++ levelsName, output);
 		}).play(RootNode(server), [\out, outBus], \addToTail);
 
-		outresp = OSCdef(\widgetLevels, {
+		outresp = OSCdef(\spWidgetLevels, {
 			|msg, t|
 			{
 				msg = msg[3..];
@@ -1509,9 +1514,14 @@ ScopeWidget : ServerWidgetBase {
 		};
 		if (synth.isPlaying.not) {
 			// ServerTree runs this off the GUI thread, so every scopeView
-			// (Qt) call has to be deferred or the primitive fails.
-			var bufIndex = synth.bufferIndex;
+			// (Qt) call has to be deferred or the primitive fails. The scope
+			// buffer only exists once the synth has been played, so its index
+			// is read after `play`, not before (it was nil on the first start)
+			var bufIndex;
 			var colors = this.scopeChannels.collect { |i| this.channelColor(i) };
+
+			synth.play(2048, bus, cycle);
+			bufIndex = synth.bufferIndex;
 
 			{
 				if (scopeView.notNil) {
@@ -1527,7 +1537,6 @@ ScopeWidget : ServerWidgetBase {
 				}
 			}.defer;
 
-			synth.play(2048, bus, cycle);
 			this.playLevelSynth();
 		}
 	}
@@ -1566,9 +1575,9 @@ ScopeWidget : ServerWidgetBase {
 	}
 }
 
-HistoryWidget : ServerWidgetBase {
+SPHistoryWidget : SPWidgetBase {
 	var historyResponder, historySynth, counter;
-	var cmdName = '/HistoryWidget';
+	var cmdName = '/SPHistoryWidget';
 
 	doOnServerTree {
 		|bootingServer|
@@ -1587,7 +1596,7 @@ HistoryWidget : ServerWidgetBase {
 	start {
 		var channels = server.options.numOutputBusChannels ?? 2;
 
-		historySynth = SynthDef("ampHistory_%".format(channels).asSymbol, {
+		historySynth = SynthDef("sp_ampHistory_%".format(channels).asSymbol, {
 			SendPeakRMS.kr(InFeedback.ar(0, channels), 6, 1, cmdName:cmdName);
 		}).play(RootNode(server), addAction:\addToTail);
 
@@ -1622,7 +1631,7 @@ HistoryWidget : ServerWidgetBase {
 	view {
 		var view;
 
-		counter = GraphCounter("peak", nil, this.smallFont, colGood, 0.0, 1.0, historySize:160);
+		counter = SPGraphCounter("peak", nil, this.smallFont, colGood, 0.0, 1.0, historySize:160);
 		view = counter.view;
 		view.background_(colOff);
 		view.minHeight_(40);
