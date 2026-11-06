@@ -1,6 +1,11 @@
 ServerPanel : Singleton {
 	classvar panelTypes, <>widgets, <actions, <>border=true,
 	showOnBoot=true, serverViewShown=false;
+
+	// Whether s.scope, s.freqscope, s.meter and s.plotTree - and the IDE's
+	// Server menu, which calls them - open this quark's windows (true) or the
+	// stock ones (false). See extServer.sc.
+	classvar <>replaceStockWindows = true;
 	var <>view, <window, widgetLayout, server, <>widgets, containers;
 
 	*initClass {

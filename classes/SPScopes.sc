@@ -157,6 +157,16 @@ SPScope : SPScopeWindow {
 		this.prRefresh;
 	}
 
+	// what Server:scope asks for, in one restart
+	prSetProperties {
+		|argChannels, argIndex, argRate|
+		numChannels = argChannels.asInteger.clip(1, 32);
+		index = argIndex.asInteger.max(0);
+		rate = (argRate ? \audio).asSymbol;
+		this.prRestart;
+		this.prRefresh;
+	}
+
 	prSyncControls {
 		indexBox.value = index;
 		rateMenu.value = #[\audio, \control].indexOf(rate) ? 0;

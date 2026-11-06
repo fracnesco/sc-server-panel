@@ -88,6 +88,19 @@ The same entries are in the options menu at the top right.
 
 ## The windows
 
+They replace the stock ones everywhere: `s.scope`, `s.freqscope`, `s.meter`
+and `s.plotTree` open them, and so does the IDE's Server menu, which calls
+exactly those, and `Bus:scope`, `{ ... }.scope` and `{ ... }.freqscope`. To have
+the stock windows back, without recompiling:
+
+```supercollider
+ServerPanel.replaceStockWindows = false;
+```
+
+The methods are replaced from `classes/SystemOverwrites`, the folder
+SuperCollider expects intentional overwrites in, so the class library compiles
+without warnings about them.
+
 Each is one window per server: asking again brings the open one to the
 front. They survive cmd + period and a reboot, and free what they hold on the
 server when you close them. Space runs and pauses, escape closes.
@@ -145,6 +158,7 @@ SPTree.notes.addFirst(["^my_", "one of mine"]);
 | [classes/SPScopes.sc](classes/SPScopes.sc) | `SPScopeWindow`, and the two scopes on it: `SPScope`, `SPFreqScope` |
 | [classes/SPMeter.sc](classes/SPMeter.sc) | `SPMeter`, the level meters |
 | [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree |
+| [classes/SystemOverwrites/extServer.sc](classes/SystemOverwrites/extServer.sc) | `s.scope`, `s.freqscope`, `s.meter`, `s.plotTree` opening the four windows, with the stock bodies for `replaceStockWindows = false` |
 | [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree` |
 | [Test/ServerPanel_unittest.scd](Test/ServerPanel_unittest.scd) | ServerView's unit test, renamed |
 | [install.scd](install.scd) | links a clone into the extensions folder, checks, unlinks |

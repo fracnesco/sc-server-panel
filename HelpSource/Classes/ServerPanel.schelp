@@ -43,7 +43,14 @@ ServerPanel is populated by widgets that must be subclasses of link::Classes/SPW
 2. Add the class to link::#*widgets:: in your startup file, or any time before a ServerPanel is created.
 
 
+subsection:: The stock windows
+
+code::s.scope::, code::s.freqscope::, code::s.meter:: and code::s.plotTree:: - and the IDE's Server menu, which calls them - open link::Classes/SPScope::, link::Classes/SPFreqScope::, link::Classes/SPMeter:: and link::Classes/SPTree:: while link::#*replaceStockWindows:: is true.
+
 CLASSMETHODS::
+
+METHOD:: replaceStockWindows
+Whether the server's own window methods open this quark's windows (true, the default) or the stock ones (false). Takes effect at once, no recompile.
 
 METHOD:: new
 Create a new ServerPanel
