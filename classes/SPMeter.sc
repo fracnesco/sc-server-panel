@@ -4,7 +4,7 @@
 // What `s.meter` opens, made again: every input and output as a bar with
 // its rms as the body and its peak as a line, a peak hold, a clip light
 // that stays on until you click, the held peak in dB under each bar, and
-// one dB scale beside them all. Point at a bar and the top row reads out
+// one dB scale beside them all. Point at a bar and the line along the bottom reads out
 // its peak and rms.
 //
 //   SPMeter(s);

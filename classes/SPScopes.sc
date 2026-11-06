@@ -5,7 +5,7 @@
 // ServerPanel is drawn: the dark palette, a row of controls along the
 // top, and a grid with its numbers on it - the time and the level for the
 // scope, the frequency and the dB for the frequency scope. Point at the
-// trace and the top row reads out what is under the pointer.
+// trace and the line along the bottom reads out what is under the pointer.
 //
 //   SPScope(s);                    // the main out, every channel
 //   SPScope(s).index_(8).numChannels_(2);   // any bus

@@ -4,7 +4,7 @@ categories:: Libraries>ServerPanel
 related:: Classes/SPFreqScope, Classes/ServerPanel, Classes/Stethoscope, Classes/ScopeView
 
 DESCRIPTION::
-What code::s.scope:: opens, drawn the way link::Classes/ServerPanel:: is: the dark palette, a row of controls along the top and a grid over the trace. The grid has a lane per channel with the channel's bus number in its colour, lines at 0.5 and 1 (they move with the zoom), eight time divisions and the time the screen holds in milliseconds. Point at the trace and the top row reads out the channel, the level and the time under the pointer.
+What code::s.scope:: opens, drawn the way link::Classes/ServerPanel:: is: the dark palette, a row of controls along the top and a grid over the trace. The grid has a lane per channel with the channel's bus number in its colour, lines at 0.5 and 1 (they move with the zoom), eight time divisions and the time the screen holds in milliseconds. Point at the trace and the line along the bottom reads out the channel, the level and the time under the pointer.
 
 There is one per server: asking again brings the open window to the front. ServerPanel's code::s:: key and its options menu open it. The window survives cmd + period and a reboot, and frees its synth and scope buffer when it closes.
 

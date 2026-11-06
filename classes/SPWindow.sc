@@ -3,7 +3,7 @@
 //
 // One window per server and kind (asking again brings it to the front),
 // the panel's dark palette, a row of controls along the top with a run
-// button first and a readout last, space to run and pause, escape to
+// button first, a readout line along the bottom, space to run and pause, escape to
 // close, and hooks that start it again after cmd + period or a reboot and
 // stop it when the server quits or the window closes. SPScope,
 // SPFreqScope, SPMeter and SPTree are these.
@@ -12,7 +12,7 @@
 SPWindow {
 	classvar <all;
 
-	var <server, key, <window, readout, runButton;
+	var <server, key, <window, readout, readoutText = "", runButton;
 	var <running = true;
 
 	*initClass { all = IdentityDictionary.new }
@@ -80,15 +80,23 @@ SPWindow {
 			.toolTip_(this.runHint)
 			.action_({ |b| this.running = b.value == 1 });
 
-		readout = StaticText()
-			.font_(Font(Font.defaultMonoFace, 10))
-			.stringColor_(SPWidgetBase.colText)
-			.align_(\right)
-			.minWidth_(160);
+		// What is under the pointer, on a line of its own under the body. Drawn,
+		// not a StaticText: a label grows with its text and pushes the controls
+		// around (the top row jumped on every hover, 2026-11-06), a line of
+		// fixed height that clips what does not fit never moves anything.
+		readout = UserView()
+			.fixedHeight_(16)
+			.minWidth_(10)
+			.drawFunc_({ |v|
+				var font = Font(Font.defaultMonoFace, 10), str = readoutText, w = v.bounds.width - 4;
+				Pen.addRect(Rect(0, 0, v.bounds.width, v.bounds.height));
+				Pen.clip;
+				Pen.stringAtPoint(str, Point(2, 1), font, SPWidgetBase.colText);
+			});
 
-		top = HLayout(*([runButton] ++ this.controls ++ [nil, readout])).spacing_(6).margins_(0);
+		top = HLayout(*([runButton] ++ this.controls ++ [nil])).spacing_(6).margins_(0);
 		body = this.prBody;
-		window.layout = VLayout(top, [body, stretch: 1]).margins_(6).spacing_(6);
+		window.layout = VLayout(top, [body, stretch: 1], readout).margins_(6).spacing_(4);
 
 		window.view.keyDownAction_({ |v, char, mods, unicode, keycode|
 			case
@@ -169,7 +177,13 @@ SPWindow {
 			.action_({ action.value })
 	}
 
-	prReadout { |str| if (readout.notNil and: { readout.isClosed.not }) { readout.string = str ? "" } }
+	prReadout {
+		|str|
+		str = str ? "";
+		if (str == readoutText) { ^this };
+		readoutText = str;
+		if (readout.notNil and: { readout.isClosed.not }) { readout.refresh };
+	}
 
 	prWheel { |mods, dx, dy| }
 

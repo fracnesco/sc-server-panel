@@ -4,7 +4,7 @@ categories:: Libraries>ServerPanel
 related:: Classes/SPScope, Classes/SPTree, Classes/ServerPanel, Classes/ServerMeter
 
 DESCRIPTION::
-What code::s.meter:: opens, made again the way link::Classes/ServerPanel:: is drawn. A bar per input and per output: the rms as the body (blue, orange above -6 dB, red above -1 dB), the peak as a white line, the held peak as an orange one (red over 0 dBFS). The light over each bar goes red when a peak reaches 0 dBFS and stays red; the number under the bar is the highest peak since the last reset. One dB scale runs beside all of them. Point at a bar and the top row reads its peak, rms and highest peak.
+What code::s.meter:: opens, made again the way link::Classes/ServerPanel:: is drawn. A bar per input and per output: the rms as the body (blue, orange above -6 dB, red above -1 dB), the peak as a white line, the held peak as an orange one (red over 0 dBFS). The light over each bar goes red when a peak reaches 0 dBFS and stays red; the number under the bar is the highest peak since the last reset. One dB scale runs beside all of them. Point at a bar and the line along the bottom reads its peak, rms and highest peak.
 
 Click the meters, or press strong::reset::, to let go of the holds, the numbers and the lights.
 

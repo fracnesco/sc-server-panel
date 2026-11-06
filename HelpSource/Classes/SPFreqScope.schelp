@@ -4,7 +4,7 @@ categories:: Libraries>ServerPanel
 related:: Classes/SPScope, Classes/ServerPanel, Classes/FreqScope, Classes/FreqScopeView
 
 DESCRIPTION::
-What code::s.freqscope:: opens, drawn the way link::Classes/ServerPanel:: is. The grid has the frequencies (20, 50, 100 ... on a logarithmic scale, every kHz on a linear one) and the dB, 0 at the top. Point at the spectrum and the top row reads out the frequency, the nearest note with its cents, and the level.
+What code::s.freqscope:: opens, drawn the way link::Classes/ServerPanel:: is. The grid has the frequencies (20, 50, 100 ... on a logarithmic scale, every kHz on a linear one) and the dB, 0 at the top. Point at the spectrum and the line along the bottom reads out the frequency, the nearest note with its cents, and the level.
 
 What it changes against the stock one:
 list::

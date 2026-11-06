@@ -6,7 +6,7 @@ The window the server opens on boot: CPU and node counters with their history,
 input and output meters around a small scope, a peak history, the volume and a
 recorder row, in one dark palette. The `s`, `f`, `l` and `p` keys open a scope,
 a frequency scope, level meters and the node tree in the same colours, each
-with a readout of what is under the pointer.
+with a line along the bottom that reads out what is under the pointer.
 
 ```supercollider
 s.boot;              // the panel opens by itself
