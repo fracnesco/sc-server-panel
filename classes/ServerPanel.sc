@@ -12,7 +12,7 @@ ServerPanel : Singleton {
 		panelTypes = IdentityDictionary();
 		// the master fx row sits under the counters, and only exists
 		// when the ParaEQ extension - FxChain - is compiled in
-		widgets = List[SPStatusWidget]
+		widgets = List[SPStatusWidget, SPMemoryWidget]
 			++ (if (\FxChain.asClass.notNil) { [SPMasterFxWidget] } { [] })
 			++ [SPScopeWidget, SPHistoryWidget, SPVolumeWidget, SPRecordWidget];
 		actions = IdentityDictionary();
@@ -815,6 +815,131 @@ SPGraphCounter {
 
 		number.string = (val.round(round).asString + units);
 		view.refresh();
+	}
+}
+
+// The machine's RAM as one bar: the server's buffers (samples), the rest of
+// the server process, other programs, and what is still available. Buffers
+// are counted in the language (frames x channels x 4 bytes, every Buffer
+// object of this server); the rest is asked of the OS every `interval` s.
+SPMemoryWidget : SPWidgetBase {
+	classvar <>interval = 2;
+	var view, bar, readout, skip, <info;
+
+	view {
+		info = ();
+		bar = UserView().fixedHeight_(10).background_(colOff)
+			.drawFunc_({ |v| this.prDraw(v) });
+		readout = StaticText().font_(this.smallFont).stringColor_(colDim).align_(\center);
+		view = View().layout_(VLayout(bar, readout).margins_(0).spacing_(2))
+			.toolTip_("RAM: samples (every Buffer on the server), the rest of scsynth, other programs, available");
+		skip = SkipJack({ this.update }, interval, { view.isNil or: { view.isClosed } }, "SPMemoryWidget");
+		view.onClose_({ skip.stop });
+		this.update;
+		^view
+	}
+
+	update {
+		var sys;
+		info[\samples] = this.class.bufferBytes(server);
+		sys = this.class.systemMemory(if(server.serverRunning and: { server.isLocal }) { server.pid });
+		info.putAll(sys);
+		if (view.notNil and: { view.isClosed.not }) {
+			readout.string = this.prReadout;
+			bar.refresh;
+		}
+	}
+
+	*bufferBytes {
+		|server|
+		var sum = 0;
+		Buffer.cachedBuffersDo(server, { |b|
+			sum = sum + ((b.numFrames ? 0) * (b.numChannels ? 0) * 4)
+		});
+		^sum
+	}
+
+	// (total:, available:, process:) in bytes, each nil when the OS did not say
+	*systemMemory {
+		|pid|
+		var out, lines, nums, num, field, res = ();
+		num = { |str| str.select { |c| c.isDecDigit }.asFloat };
+		field = { |name| lines.detect { |l| l.beginsWith(name) } !? { |l| num.(l.split($:)[1]) } };
+		Platform.case(
+			\osx, {
+				out = ("sysctl -n hw.memsize; vm_stat"
+					++ (pid !? { "; ps -o rss= -p " ++ pid } ? "")).unixCmdGetStdOut;
+				lines = out.split($\n);
+				nums = lines.select { |l| l.size > 0 and: { l.every { |c| c.isDecDigit or: { c.isSpace } } } };
+				res[\total] = nums[0] !? num;
+				res[\process] = nums[1] !? { |l| num.(l) * 1024 };
+				lines.detect { |l| l.contains("page size of") } !? { |l|
+					var page = num.(l), used;
+					used = [
+						field.("Anonymous pages"), field.("Pages purgeable").neg,
+						field.("Pages wired down"), field.("Pages occupied by compressor")
+					];
+					if (used.includes(nil).not and: { res[\total].notNil }) {
+						res[\available] = res[\total] - (used.sum * page)
+					}
+				}
+			},
+			\linux, {
+				out = ("cat /proc/meminfo" ++ (pid !? { "; ps -o rss= -p " ++ pid } ? "")).unixCmdGetStdOut;
+				lines = out.split($\n);
+				res[\total] = field.("MemTotal") !? { |k| k * 1024 };
+				res[\available] = field.("MemAvailable") !? { |k| k * 1024 };
+				res[\process] = lines.reject(_.contains(":")).detect { |l| l.any(_.isDecDigit) }
+					!? { |l| num.(l) * 1024 };
+			},
+			\windows, {
+				out = ("powershell -NoProfile -Command \"$o = Get-CimInstance Win32_OperatingSystem; "
+					++ "$o.TotalVisibleMemorySize; $o.FreePhysicalMemory"
+					++ (pid !? { "; (Get-Process -Id " ++ pid ++ ").WorkingSet64" } ? "") ++ "\"").unixCmdGetStdOut;
+				nums = out.split($\n).select { |l| l.any(_.isDecDigit) };
+				res[\total] = nums[0] !? { |l| num.(l) * 1024 };
+				res[\available] = nums[1] !? { |l| num.(l) * 1024 };
+				res[\process] = nums[2] !? num;
+			}
+		);
+		^res
+	}
+
+	*bytesString {
+		|bytes|
+		if (bytes.isNil) { ^"?" };
+		if (bytes >= (2 ** 30)) { ^(bytes / (2 ** 30)).round(0.1).asString ++ " GB" };
+		^(bytes / (2 ** 20)).round(1).asInteger.asString ++ " MB"
+	}
+
+	prReadout {
+		var str = "samples " ++ this.class.bytesString(info[\samples]);
+		info[\process] !? { |p| str = str ++ "  server " ++ this.class.bytesString(p) };
+		if (info[\total].notNil and: { info[\available].notNil }) {
+			str = str ++ "  free " ++ this.class.bytesString(info[\available])
+				++ " / " ++ this.class.bytesString(info[\total])
+		};
+		^str
+	}
+
+	prDraw {
+		|v|
+		var w = v.bounds.width, h = v.bounds.height, total = info[\total], x = 0, samples, server, used;
+		if (total.isNil or: { total <= 0 }) { ^nil };
+		samples = info[\samples] ? 0;
+		server = max(info[\process] ? 0, samples);
+		used = max(info[\available] !? { total - info[\available] } ? server, server);
+		[
+			[samples, colAccent],
+			[server - samples, colMeter.copy.alpha_(0.7)],
+			[used - server, colGrid]
+		].do { |seg|
+			// a segment that holds anything stays visible against a big machine
+			var sw = (seg[0] / total * w).max(if(seg[0] > 0) { 2 } { 0 }).min(w - x).max(0);
+			Pen.fillColor = seg[1];
+			Pen.fillRect(Rect(x, 0, sw, h));
+			x = x + sw;
+		};
 	}
 }
 

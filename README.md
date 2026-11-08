@@ -3,6 +3,7 @@
 **A compact server window, with a scope, a frequency scope, level meters and a node tree to match.** A SuperCollider extension.
 
 The window the server opens on boot: CPU and node counters with their history,
+a RAM bar (the server's samples, the rest of scsynth, other programs, what is free),
 input and output meters around a small scope, a peak history, the volume and a
 recorder row, in one dark palette. The `s`, `f`, `l` and `p` keys open a scope,
 a frequency scope, level meters and the node tree in the same colours, each

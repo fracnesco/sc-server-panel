@@ -6,7 +6,7 @@ related:: Classes/SPScope, Classes/SPFreqScope, Classes/SPMeter, Classes/SPTree,
 DESCRIPTION::
 ServerPanel is a fork of Scott Carver's ServerView quark (link::https://github.com/scztt/ServerView.quark::), with its classes renamed so the two can be installed side by side. Both take over the window the server opens on boot, so keep one of them.
 
-ServerPanel is a replacement for the standard SuperCollider server gui. It has a cleaner and more compact look, it supports multiple servers, and displays graphs of CPU usage, Synth counts, as well as a scope and input/output levels.
+ServerPanel is a replacement for the standard SuperCollider server gui. It has a cleaner and more compact look, it supports multiple servers, and displays graphs of CPU usage, Synth counts, a RAM bar (the memory the server's buffers take, frames x channels x 4 bytes, the scsynth process, and what the machine still has free), as well as a scope and input/output levels.
 
 The window is drawn in a dark palette of its own, in the system sans-serif face, so it looks the same on every machine and the same as the BusRecorder and Insight windows it can open.
 
