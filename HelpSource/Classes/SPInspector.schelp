@@ -1,0 +1,154 @@
+TITLE:: SPInspector
+summary:: the panel of SPTree that says everything about one node: who made it, controls, busses, UGens
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPScope, Classes/ServerPanel, Classes/SynthDesc
+
+DESCRIPTION::
+The panel at the right of link::Classes/SPTree::. It is made by the tree; click a node there, running or under strong::recent::, and it shows:
+
+list::
+## what it is and who made it, from link::Classes/SPTree#*describers:: (an Ndef, an orbit's global effect, a synth of one SuperDirt event, and whatever a system of yours says - SuperDirtGUI names its faders, inserts, tracks, returns and the content file of an event's synth);
+## the groups above it, by name;
+## whether it runs or is paused, and how long it has been seen. Paused is known from the server's notifications (code::/n_off::, code::/n_on::), so only since the window opened;
+## its controls, with values and defaults. Type a value and return to set it (code::/n_set:: by index); a control mapped to a bus says which in its tooltip; an array control is one row;
+## the busses it reads and writes, with names from link::Classes/SPTree#*busNamers::, read from its SynthDef's code::In::, code::InFeedback::, code::Out:: and code::ReplaceOut:: UGens and the controls that feed them;
+## the UGens inside it.
+::
+
+Its buttons: strong::trace:: (code::/n_trace::: every UGen's inputs and outputs, once, into the post window), strong::pause:: / strong::run::, strong::free:: (click twice), strong::scope out:: (the bus it writes in link::Classes/SPScope:: - the whole bus, not only this synth's part), strong::source:: (the file a describer named), strong::copy:: (a line of code that reaches it, onto the clipboard and into the post window), strong::post:: (all of it as text), and a describer's own actions. For a group: strong::dump:: (code::/g_dumpTree::), pause, free (everything inside), copy, post, and the defs it holds.
+
+What the SynthDef says - defaults, busses, UGens - needs its link::Classes/SynthDesc:: in this sclang, which every def made with code::.add:: has. The selected synth's values are asked for with code::/s_getn:: through it; without one, from its group's tree.
+
+The class methods are the inspector's knowledge, usable on their own:
+
+code::
+s.boot;
+SPTree(s);
+SPInspector.textOf(SPTree(s).recordOf(s.defaultGroup.nodeID), s).postln;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+Made by link::Classes/SPTree::.
+ARGUMENT:: tree
+The SPTree it belongs to.
+
+METHOD:: textOf
+Everything about a node, as text: what code::post:: writes.
+ARGUMENT:: record
+link::Classes/SPTree#-recordOf::'s answer.
+ARGUMENT:: server
+The link::Classes/Server::.
+RETURNS:: a link::Classes/String::
+
+METHOD:: controlRows
+A synth's controls as rows: Events with code::label::, code::index::, code::value:: and code::default::, or code::values:: and code::array: true:: for an array control.
+ARGUMENT:: record
+A record with code::def:: and code::controls::.
+
+METHOD:: ioRows
+The busses a synth reads and writes: Events with code::dir:: (code::\in:: or code::\out::), code::type::, code::rate::, code::channels::, code::bus:: (nil when worked out in the graph or mapped), code::via:: (the control that sets it) and code::name::.
+ARGUMENT:: record
+A record with code::def:: and code::controls::.
+ARGUMENT:: server
+The link::Classes/Server::.
+
+METHOD:: ugenSummary
+code::"7 UGens: BinaryOpUGen ×4, SinOsc ×2, Out"::, or nil without the def.
+ARGUMENT:: desc
+A link::Classes/SynthDesc::.
+
+METHOD:: descOf
+The SynthDesc of a def in code::SynthDescLib.global::, or nil.
+ARGUMENT:: def
+A SynthDef's name.
+
+METHOD:: numControls
+How many control values a SynthDesc's synth has.
+ARGUMENT:: desc
+A link::Classes/SynthDesc::.
+
+METHOD:: namedValues
+Values by index as code::[name or index, value]:: pairs, the way code::/g_queryTree:: lists them.
+ARGUMENT:: desc
+A link::Classes/SynthDesc::.
+ARGUMENT:: values
+The values, by index.
+
+METHOD:: codeOf
+A line of code that reaches the node: code::Synth.basicNew:: or code::Group.basicNew::.
+ARGUMENT:: record
+A record.
+ARGUMENT:: server
+The link::Classes/Server::.
+
+METHOD:: stateOf
+code::"running, seen for 12.0 s"::, code::"paused for 3.1 s"::, code::"gone 2.0 s ago, seen for 150 ms"::.
+ARGUMENT:: record
+A record.
+ARGUMENT:: now
+The time to measure from; code::Main.elapsedTime:: when nil.
+
+METHOD:: ioText
+One of link::#*ioRows:: in words.
+ARGUMENT:: r
+A row.
+
+METHOD:: mappedText
+A mapped control's value (code::c12::, code::a12::) in words, or nil for a plain value.
+ARGUMENT:: v
+The value.
+ARGUMENT:: server
+The link::Classes/Server::.
+
+METHOD:: valueString
+A value as the panel writes it.
+ARGUMENT:: v
+A number, Symbol or String.
+
+METHOD:: duration
+Seconds in words: code::"150 ms"::, code::"2.0 s"::, code::"3 min 5s"::.
+ARGUMENT:: t
+Seconds.
+
+METHOD:: serverCode
+What to write for a server in code: code::s:: for the default one.
+ARGUMENT:: server
+The link::Classes/Server::.
+
+METHOD:: copy
+Onto the clipboard (pbcopy, clip or xclip) and into the post window.
+ARGUMENT:: str
+The text.
+
+METHOD:: openSource
+Open a file: in the IDE when there is one, else with the system's program for it.
+ARGUMENT:: path
+The file.
+
+METHOD:: width
+The panel's width in pixels.
+
+INSTANCEMETHODS::
+
+METHOD:: show
+Show a record (nil for nothing). Built again when another node is shown, only the values otherwise.
+ARGUMENT:: argRecord
+link::Classes/SPTree#-recordOf::'s answer.
+
+METHOD:: tree
+The link::Classes/SPTree:: it belongs to.
+
+METHOD:: view
+Its link::Classes/ScrollView::.
+
+METHOD:: server
+The tree's server.
+
+METHOD:: font
+A font of the panel.
+ARGUMENT:: size
+Points.
+ARGUMENT:: bold
+Bold or not.

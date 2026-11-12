@@ -137,17 +137,59 @@ the root node, so it reads the outputs after everything.
 **SPTree** shows the node tree as an outline, one row per node, indented by
 depth. A group says what it is when that can be known: the root, the default
 group, an `Ndef`, SuperDirt and its orbits, an fx chain. It says how many
-synths are inside, and a click folds it away. A synth shows its SynthDef in a
-colour of its own (one def, one colour), what it belongs to when its name says
-so (a scope, SuperDirt's meter, a SuperDirtGUI insert ...), and with
-**controls** on, its controls. Nodes that have just appeared are lit for a
-second, so you can see what an event made. The filter keeps the synths whose
-def contains what you type; a double click traces a synth into the post window.
-Teach it your own names:
+synths are inside, and a click on its triangle folds it away. A synth shows its
+SynthDef in a colour of its own (one def, one colour), what it is at the right
+(an Ndef's synth, an orbit's effect, a synth of one SuperDirt event, a scope
+...), and with **controls** on, its controls. Nodes that have just appeared are
+lit for a second, so you can see what an event made. The filter keeps the
+synths whose def contains what you type; a double click traces a synth into the
+post window.
+
+### The inspector
+
+Click a node and the panel at the right of the tree says everything that can be
+known about it, to find out which synth is what and why it sounds the way it
+does:
+
+- what it is and who made it, and the groups above it by name;
+- whether it runs or is paused (a SuperDirt effect asleep is paused), and for how long it has been seen;
+- its controls with their values and defaults; type a value and return to set it (`/n_set`); a control mapped to a bus says which;
+- the busses it reads and writes, with names (BusManager's, SuperDirt's orbits, the hardware), from its SynthDef's `In` and `Out` UGens and the controls that feed them;
+- the UGens inside it;
+- buttons: **trace** (`/n_trace`, every UGen's inputs and outputs once, into the post window), **pause** / **run**, **free** (click twice), **scope out** (the bus it writes, in `SPScope`), **source** (the file it came from, when that is known), **copy** (a line of code that reaches it), **post** (all of this as text).
+
+**recent** lists the synths that have ended, newest first, and the inspector
+still shows what was seen of them. A SuperDirt event's synths live a fraction of
+a second, shorter than the tree asks the server, so the tree asks for every new
+group's contents the moment it appears (`/n_go`): an event's synths are caught
+there even when they never show in the outline. Up and down move the selection.
+
+What the SynthDef says - defaults, busses, UGens - is known when this sclang has
+its `SynthDesc`, which every def made here with `.add` has. Whether a node is
+paused is known from the server's notifications, so only since the window
+opened. The server has no CPU figure per synth, and a synth's own level only
+shows when it writes to a bus of its own (**scope out** shows the whole bus).
+
+```supercollider
+SPTree(s).inspect(1001);                        // the window on a node
+SPInspector.textOf(SPTree(s).recordOf(1001), s).postln;
+```
+
+### Your own names
+
+Teach it what your groups, synths and busses are. A describer answers an Event:
+`name`, `where`, `text`, `file`, `actions` (buttons in the inspector); for each key
+the first answer wins. SuperDirtGUI adds its own this way, so its faders,
+inserts, tracks and returns, and the content file of an event's synth, are named.
 
 ```supercollider
 SPTree.labellers.add({ |server, labels| labels[~myGroup.nodeID] = "my group" });
 SPTree.notes.addFirst(["^my_", "one of mine"]);
+SPTree.describers.addFirst({ |server, node|
+	if (node[\def] == \myPad) { (name: "the pad", file: "~/pads.scd".standardizePath,
+		actions: [["louder", { |n, srv| srv.sendMsg(\n_set, n[\id], \amp, 0.3) }]]) }
+});
+SPTree.busNamers.addFirst({ |server, rate, index| if (rate == \audio and: { index == 20 }) { "my send" } });
 ```
 
 ## Files
@@ -158,9 +200,10 @@ SPTree.notes.addFirst(["^my_", "one of mine"]);
 | [classes/SPWindow.sc](classes/SPWindow.sc) | `SPWindow`, what the four windows share: one per server, the top row, run and pause, the server hooks |
 | [classes/SPScopes.sc](classes/SPScopes.sc) | `SPScopeWindow`, and the two scopes on it: `SPScope`, `SPFreqScope` |
 | [classes/SPMeter.sc](classes/SPMeter.sc) | `SPMeter`, the level meters |
-| [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree |
+| [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree, and what it knows: labellers, describers, bus names, history |
+| [classes/SPInspector.sc](classes/SPInspector.sc) | `SPInspector`, the panel at the right of the tree: everything about one node |
 | [classes/SystemOverwrites/extServer.sc](classes/SystemOverwrites/extServer.sc) | `s.scope`, `s.freqscope`, `s.meter`, `s.plotTree` opening the four windows, with the stock bodies for `replaceStockWindows = false` |
-| [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree` |
+| [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree`, `SPInspector` |
 | [Test/ServerPanel_unittest.scd](Test/ServerPanel_unittest.scd) | ServerView's unit test, renamed |
 | [install.scd](install.scd) | links a clone into the extensions folder, checks, unlinks |
 

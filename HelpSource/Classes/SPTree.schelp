@@ -1,14 +1,16 @@
 TITLE:: SPTree
-summary:: the server's node tree as an outline: named groups, coloured synths, what just appeared
+summary:: the server's node tree as an outline, with an inspector that says what each node is
 categories:: Libraries>ServerPanel
-related:: Classes/SPMeter, Classes/ServerPanel, Classes/Group, Classes/Node
+related:: Classes/SPInspector, Classes/SPMeter, Classes/ServerPanel, Classes/Group, Classes/Node
 
 DESCRIPTION::
 What code::s.plotTree:: shows, made legible. One row per node, indented by depth, with guides down the side.
 
 list::
-## A strong::group:: says what it is when that can be known: the root, the default group, an code::Ndef::, SuperDirt and each of its orbits, a ParaEQ fx chain. Its row says how many synths are inside, folded or not. Click it to fold it away; strong::open all:: unfolds everything.
-## A strong::synth:: shows its SynthDef, with a dot in a colour of its own: the same def is always the same colour, so twenty of one kind read as one kind. At the right it says what the synth belongs to when its name tells (a scope, SuperDirt's meter, a SuperDirtGUI insert ...). With strong::controls:: on, the row carries its controls and their values.
+## A strong::group:: says what it is when that can be known: the root, the default group, an code::Ndef::, SuperDirt and each of its orbits, a ParaEQ fx chain. Its row says how many synths are inside, folded or not. Click its triangle (or double click the row) to fold it away; strong::open all:: unfolds everything.
+## A strong::synth:: shows its SynthDef, with a dot in a colour of its own: the same def is always the same colour, so twenty of one kind read as one kind. At the right it says what the synth is, from link::#*describers:: (an Ndef's synth, an orbit's global effect, a synth of one SuperDirt event, a scope ...). A paused synth says so. With strong::controls:: on, the row carries its controls and their values.
+## A click on a node shows it in the strong::inspector:: at the right (link::Classes/SPInspector::): who made it, its controls (set them there), the busses it reads and writes, the UGens inside, and buttons to trace, pause, free, scope, open its source, copy code that reaches it. Up and down move the selection.
+## strong::recent:: lists the synths that have ended, newest first; click one to see what it was. A new group's contents are asked for the moment it appears (code::/n_go::), so the synths of a SuperDirt event, which live a fraction of a second, are caught even when they never reach the outline.
 ## A node that has just appeared is lit in orange for a second, so what an event or a key press made shows.
 ## The filter keeps the synths whose def, or groups whose name, contains what you type, with the groups they are in.
 ## A double click on a synth traces it into the post window (code::/n_trace::).
@@ -22,16 +24,21 @@ SPTree(s);
 SPTree(s).showControls = true;
 SPTree(s).filter = "dirt";
 SPTree(s).interval = 0.25;
+SPTree(s).inspect(s.defaultGroup.nodeID);
 ::
 
 subsection:: Names of your own
 
-A group's name comes from the functions in link::#*labellers::, a synth's note from link::#*notes::. Both are lists you can add to:
+A group's name comes from the functions in link::#*labellers::, what a node is from link::#*describers:: (and, last, link::#*notes::), what a bus is from link::#*busNamers::. All are lists you can add to; SuperDirtGUI adds its own describer, bus names and labels this way while it runs.
 
 code::
 ~g = Group(s);
 SPTree.labellers.add({ |server, labels| labels[~g.nodeID] = "my group" });
 SPTree.notes.addFirst(["^my_", "one of mine"]);
+SPTree.describers.addFirst({ |server, node|
+	if (node[\path].includes(~g.nodeID)) { (name: "one of mine", where: "my group", text: "made by my pattern") }
+});
+SPTree.busNamers.addFirst({ |server, rate, index| if (rate == \audio and: { index == 20 }) { "my send" } });
 ::
 
 CLASSMETHODS::
@@ -47,6 +54,41 @@ A link::Classes/List:: of functions code::{ |server, labels| }::, each putting n
 
 METHOD:: notes
 A link::Classes/List:: of code::[regexp, text]:: pairs: a synth whose def matches the regexp is described by the text. The first that matches wins.
+
+METHOD:: describers
+A link::Classes/List:: of functions code::{ |server, node| }:: saying what a node is. code::node:: is an link::Classes/Event:: with code::id::, code::kind:: (code::\synth:: or code::\group::), code::def::, code::parent::, code::path:: (the ids of the groups above it, root first) and, when known, code::controls:: (code::[name, value]:: pairs). A describer answers nil or an Event with any of: code::name:: (a few words, also shown at the right of the row), code::where::, code::text::, code::file:: (a source file, for the inspector's strong::source:: button), code::actions:: (code::[[label, { |node, server| }] ...]::, buttons in the inspector). Every describer is asked; for each key the first answer wins, actions add up. Use code::addFirst:: to speak before the ones built in (an Ndef's synth, SuperDirt's orbit effects and event synths, the notes). An error in one is ignored.
+
+METHOD:: describe
+What link::#*describers:: say about a node.
+ARGUMENT:: server
+The link::Classes/Server::.
+ARGUMENT:: node
+An Event as above.
+RETURNS:: an link::Classes/Event::, empty when nothing is known
+
+METHOD:: busNamers
+A link::Classes/List:: of functions code::{ |server, rate, index| }:: answering a bus's name or nil; the first answer wins. Built in: BusManager's names, SuperDirt's orbit busses (code::orbit 0 dry::), the hardware.
+
+METHOD:: busName
+A bus in words, from link::#*busNamers::.
+ARGUMENT:: server
+The link::Classes/Server::.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The bus index.
+RETURNS:: a link::Classes/String::, or nil
+
+METHOD:: dirts
+A link::Classes/List:: of SuperDirt instances the tree should know. code::SuperDirt.start:: sets no code::SuperDirt.default::, so beside that and code::~dirt:: the tree looks here; SuperDirtGUI puts its own in.
+
+METHOD:: historySize
+How many ended synths link::#-history:: keeps, 300 by default.
+
+METHOD:: defColor
+The colour of a SynthDef's dot: the same def, the same colour.
+ARGUMENT:: def
+A SynthDef's name.
 
 METHOD:: noteOf
 What link::#*notes:: say a def is.
@@ -67,6 +109,37 @@ Whether each synth's controls are asked for and shown.
 
 METHOD:: filter
 Only the synths whose def contains this, and the groups they are in; an empty string shows everything.
+
+METHOD:: mode
+code::\tree::, the nodes running now, or code::\recent::, the synths that have ended.
+
+METHOD:: showInspector
+Whether the inspector is shown at the right.
+
+METHOD:: captureEvents
+Whether a new group's contents are asked for the moment it appears, so the synths of a SuperDirt event are caught. True by default.
+
+METHOD:: select
+Show a node in the inspector.
+ARGUMENT:: id
+A node id: running, or in link::#-history::.
+
+METHOD:: selected
+The id of the node shown in the inspector, or nil.
+
+METHOD:: inspect
+Bring the window to the front on a node: unfold the groups above it, select it, scroll to it.
+ARGUMENT:: id
+A node id.
+
+METHOD:: recordOf
+Everything known about a node, running or ended: what the tree says, its controls, whether it is paused (code::paused::, code::pausedSince::), when it was first seen (code::born::), when it ended (code::ended::, and code::gone:: true), the groups above it in words (code::pathText::); for a group how many groups and synths it holds and their defs.
+ARGUMENT:: id
+A node id.
+RETURNS:: an link::Classes/Event::, or nil when nothing is known
+
+METHOD:: history
+The synths that have ended since the window opened, newest first: link::#-recordOf::'s records.
 
 METHOD:: running
 Whether it follows the server. Paused, it holds the last tree.
