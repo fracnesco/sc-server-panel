@@ -202,22 +202,66 @@ SPRouting {
 
 	// ------------------------------------------------------------- problems
 
+	// The synths that are downstream of a bus channel: those that read it, and
+	// those that read what such a synth wrote - an effect on a send of it, the
+	// return that writes the effect back, a fader that works on it in place.
+	// What they write to the bus is the bus itself, processed: not a new
+	// source. One pass in tree order, and a second for what comes round
+	// through InFeedback.
+	*downstreamOf {
+		|model, index|
+		var tainted = IdentitySet[index], out = IdentitySet.new;
+		2.do {
+			model[\order].do { |n|
+				var ios = model[\ios][n[\id]];
+				if (ios.notNil and: { out.includes(n[\id]).not }) {
+					if (ios.any { |io|
+						io[\dir] == \in and: { io[\rate] == \audio } and: { io[\bus].notNil }
+						and: { io[\channels].collect { |c| tainted.includes(io[\bus] + c) }.includes(true) }
+					}) { out.add(n[\id]) };
+				};
+				if (out.includes(n[\id])) {
+					ios.do { |io|
+						if (io[\dir] == \out and: { io[\rate] == \audio } and: { io[\bus].notNil }) {
+							io[\channels].do { |c| tainted.add(io[\bus] + c) }
+						}
+					}
+				};
+			}
+		};
+		^out
+	}
+
 	// What looks wrong in the order: Events (level: \warn or \info, kind, id,
 	// bus: [rate, index], text, key). A key stays the same while the problem
 	// does, so a list of them does not flicker.
+	//
+	// A reader is early when a new source of its bus runs after it: a synth
+	// that writes the bus and is not itself downstream of it (downstreamOf) -
+	// a mixer's sends, returns and fader on one bus are a chain by design, not
+	// a mistake. It is a warning when nothing writes the bus before the reader,
+	// now or ever while fed was kept (a Set the caller keeps between calls: an
+	// orbit's bus is written by events that are not always there); else a note.
 	*problems {
-		|model|
-		var out = List.new, server = model[\server], early = Dictionary.new, pos = model[\pos];
-		// a reader before its writers
+		|model, fed|
+		var out = List.new, server = model[\server], early = Dictionary.new, pos = model[\pos], down = IdentityDictionary.new;
+		fed = fed ?? { Set.new };
+		// a reader before a source of its bus
 		model[\audio].keysValuesDo { |index, e|
 			if (this.busKind(server, \audio, index) != \in) {
 				e[\readers].do { |r|
 					if (r[\type] == \In) {
 						var rp = pos[r[\id]], others = e[\writers].reject { |w| w[\id] == r[\id] };
 						var before = others.select { |w| pos[w[\id]] < rp }, after = others.select { |w| pos[w[\id]] > rp };
+						if (before.notEmpty) { fed.add([r[\id], index]) };
+						if (after.notEmpty) {
+							// only what is not the bus itself coming round again
+							var d = down[index] ?? { down[index] = this.downstreamOf(model, index); down[index] };
+							after = after.reject { |w| d.includes(w[\id]) };
+						};
 						if (after.notEmpty) {
 							var ids = this.prIds(after).asSet.asArray.sort;
-							var key = [\early, r[\id], before.isEmpty];
+							var key = [\early, r[\id], before.isEmpty and: { fed.includes([r[\id], index]).not }];
 							var entry = early[key] ?? { early[key] = (indices: List.new, ids: IdentitySet.new); early[key] };
 							entry[\indices].add(index);
 							ids.do { |w| entry[\ids].add(w) };
@@ -268,12 +312,14 @@ SPRouting {
 	// is); paused the ids of paused synths.
 	//
 	// Answers (rows:, verdicts:). A row is (step:, depth:, ...): \synth (id,
-	// paused), \bus (rate, index, channels, kind, level, end), \note (text, id).
-	// A verdict is (ok: Boolean, text:).
+	// paused, again: reached a second time, not followed again), \bus (rate,
+	// index, channels, kind, level, end), \note (text, id). A verdict is
+	// (ok: Boolean, text:, side: true for a way that ends where nothing
+	// listens while another gets out).
 	*pathFrom {
 		|model, start, levels, paused|
 		var rows = List.new, leaves = List.new, server = model[\server], pos = model[\pos];
-		var levelOf, synthStep, busStep, limit = 400, verdicts;
+		var levelOf, synthStep, busStep, limit = 400, verdicts, shown = IdentitySet.new;
 		paused = paused ?? { IdentitySet.new };
 		levelOf = { |index, channels|
 			var vals = channels.collect { |c| levels !? { levels.value(index + c) } }.reject(_.isNil);
@@ -290,11 +336,14 @@ SPRouting {
 					rows.add((step: \note, depth: depth + 1, text: "a loop: it is already above", id: id));
 					leaves.add((status: \loop, trail: trail));
 				}
+				// reached a second time by another way: what follows it is above, once
+				{ shown.includes(id) } { row[\again] = true }
 				{ model[\ios][id].isNil } {
 					rows.add((step: \note, depth: depth + 1, text: "its SynthDef is not known to this sclang: where it writes can not be followed", id: id));
 					leaves.add((status: \unknown, trail: trail));
 				}
 				{ true } {
+					shown.add(id);
 					outs = model[\ios][id].select { |io| io[\dir] == \out and: { io[\rate] == \audio } };
 					if (outs.isEmpty) {
 						rows.add((step: \note, depth: depth + 1, text: "it writes no audio bus", id: id));
@@ -310,7 +359,7 @@ SPRouting {
 							var key = [io[\bus], io[\channels]];
 							if (done.includes(key).not) {
 								done.add(key);
-								busStep.value(io[\bus], io[\channels], id, depth + 1, visited.copy.add(id), trail);
+								busStep.value(io[\bus], io[\channels], id, depth, visited.copy.add(id), trail);
 							}
 						}
 					};
@@ -335,12 +384,15 @@ SPRouting {
 					fromPos = from !? { pos[from] } ? -1;
 					later = readers.select { |r| r[\type] != \In or: { pos[r[\id]] > fromPos } };
 					earlyOnes = readers.reject { |r| later.includes(r) };
-					earlyOnes.do { |r|
-						rows.add((step: \note, depth: depth + 1, id: r[\id], warn: true,
-							text: "% reads it too early: it runs before this writer and hears none of it".format(this.nodeText(model, r[\id]))))
-					};
 					if (later.isEmpty) {
 						rows.add((step: \note, depth: depth + 1, text: "nothing reads this bus after that", warn: true));
+						// those that read it before it is written are the suspects
+						if (earlyOnes.notEmpty) {
+							rows.add((step: \note, depth: depth + 1, id: earlyOnes.first[\id], warn: true,
+								text: "% % it earlier in the tree, before this is written: % none of it".format(
+									this.whoText(model, this.prIds(earlyOnes)), if (earlyOnes.size > 1) { "read" } { "reads" },
+									if (earlyOnes.size > 1) { "they hear" } { "it hears" })))
+						};
 						leaves.add((status: \unread, trail: trail));
 					};
 					later.sort { |a, b| pos[a[\id]] < pos[b[\id]] }.do { |r| synthStep.value(r[\id], depth + 1, visited, trail) };
@@ -359,8 +411,8 @@ SPRouting {
 	// what each way out comes to, in words: the first place the sound stops
 	*prVerdicts {
 		|model, leaves, measured|
-		var ok = List.new, stops = List.new, server = model[\server], add;
-		add = { |list, text| if (list.includes(text).not) { list.add(text) } };
+		var ok = List.new, stops = List.new, sides = List.new, server = model[\server], add;
+		add = { |list, text| if (list.includesEqual(text).not) { list.add(text) } };
 		leaves.do { |leaf|
 			var trail = leaf[\trail], stop, lastSynth, lastBus, sounding = nil;
 			trail.do { |step|
@@ -395,15 +447,24 @@ SPRouting {
 				add.value(ok, "it reaches %%".format(this.busText(server, \audio, trail.last[\index], trail.last[\channels]),
 					case { measured.not } { " (levels not measured)" } { sounding.notNil } { ", with signal all the way" } { "" }))
 			}
+			// a way that ends where nothing listens is the answer only when no way gets out:
+			// a meter, a tap for a recorder are ends by design
 			{ leaf[\status] == \unread } {
-				add.value(stops, "it ends at %: nothing reads that bus after it is written".format(
+				add.value(sides, "one way ends at %: nothing reads that bus after it is written".format(
 					this.busText(server, \audio, trail.last[\index], trail.last[\channels])))
 			}
-			{ leaf[\status] == \dead } { add.value(stops, "% writes no audio bus".format(this.nodeText(model, trail.last[\id]))) }
-			{ leaf[\status] == \loop } { add.value(stops, "one way round is a feedback loop") }
-			{ true } { add.value(stops, "one way out can not be followed (a bus worked out in a graph, or a SynthDef not known here)") };
+			{ leaf[\status] == \dead } {
+				if (trail.size > 1) { add.value(sides, "one way ends in %, which writes no audio bus (a meter, an analysis)".format(this.nodeText(model, trail.last[\id]))) } {
+					add.value(stops, "% writes no audio bus".format(this.nodeText(model, trail.last[\id])))
+				}
+			}
+			{ leaf[\status] == \loop } { add.value(sides, "one way round is a feedback loop") }
+			{ true } { add.value(sides, "one way out can not be followed (a bus worked out in a graph, or a SynthDef not known here)") };
 		};
+		// nothing gets out and nothing says why: the dead ends are the answer
+		if (ok.isEmpty and: { stops.isEmpty }) { stops = sides; sides = List.new };
 		^ok.collect { |t| (ok: true, text: t) }.asArray ++ stops.collect { |t| (ok: false, text: t) }.asArray
+			++ sides.collect { |t| (ok: false, side: true, text: t) }.asArray
 	}
 
 	// who feeds a synth: [(rate, index, channels, writers: [ids]) ...] for its inputs
