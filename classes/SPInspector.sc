@@ -355,9 +355,8 @@ SPInspector {
 
 	prHint {
 		|widget, str|
-		widget.toolTip = str;
-		widget.mouseEnterAction = { tree.prReadout(str) };
-		^widget
+		// through the tree's hint bar, which looks the pointer up among its hinted controls
+		^tree.prHintAttach(widget, str)
 	}
 
 	prHeading {

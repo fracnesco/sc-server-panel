@@ -37,6 +37,7 @@ SPMeter : SPWindow {
 	*bottomH { ^30 }
 
 	title { ^"levels" }
+	defaultHint { ^"point at a bar for its peak and rms  ·  click the meters to let go of the held peaks and the clip lights  ·  space runs and pauses" }
 
 	defaultSize {
 		var w = this.class.scaleW + 16 + (this.prBarCount * 22) + this.prGroupGap;

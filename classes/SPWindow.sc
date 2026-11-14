@@ -3,19 +3,35 @@
 //
 // One window per server and kind (asking again brings it to the front),
 // the panel's dark palette, a row of controls along the top with a run
-// button first, a readout line along the bottom, space to run and pause, escape to
+// button first, a hint bar along the bottom, space to run and pause, escape to
 // close, and hooks that start it again after cmd + period or a reboot and
 // stop it when the server quits or the window closes. SPScope,
 // SPFreqScope, SPMeter and SPTree are these.
+//
+// The hint bar says what the pointer is over - a control of the top row,
+// a row, a point of a scope - and, over nothing in particular, how to find
+// your way in the window (defaultHint). The hints box at the end of the
+// top row folds it away, for every window of the family at once:
+//
+//   SPWindow.showHints = false;
 // =====================================================================
 
 SPWindow {
 	classvar <all;
+	classvar <showHints = true;		// whether the hint bar shows, in every window
 
 	var <server, key, <window, readout, readoutText = "", runButton;
 	var <running = true;
+	var hintBox, hinted, lastLookup = 0;
 
 	*initClass { all = IdentityDictionary.new }
+
+	// fold the hint bar away, or show it, in every window that is open
+	*showHints_ {
+		|bool|
+		showHints = bool.booleanValue;
+		{ all.do { |w| w.prSyncHints } }.defer;
+	}
 
 	// one window per server and kind: asking again brings the open one to the front
 	*new {
@@ -44,6 +60,7 @@ SPWindow {
 	prRedraw { }							// draw again, on AppClock
 	prResized { }
 	runHint { ^"run or pause (space)" }
+	defaultHint { ^"hover over a control and this bar says what it does" }	// what the bar says over nothing
 
 	// ------------------------------------------------------------------ open
 
@@ -77,26 +94,43 @@ SPWindow {
 			.states_([["run", SPWidgetBase.colText, SPWidgetBase.colPanel],
 				["run", Color.black, SPWidgetBase.colAccent]])
 			.value_(running.binaryValue)
-			.toolTip_(this.runHint)
 			.action_({ |b| this.running = b.value == 1 });
+		this.prHintAttach(runButton, { this.runHint });
 
-		// What is under the pointer, on a line of its own under the body. Drawn,
-		// not a StaticText: a label grows with its text and pushes the controls
-		// around (the top row jumped on every hover, 2026-11-06), a line of
-		// fixed height that clips what does not fit never moves anything.
+		// The hint bar: what is under the pointer, or how to find your way,
+		// on a line of its own under the body. Drawn, not a StaticText: a
+		// label grows with its text and pushes the controls around (the top
+		// row jumped on every hover, 2026-11-06), a line of fixed height that
+		// clips what does not fit never moves anything.
 		readout = UserView()
-			.fixedHeight_(16)
+			.fixedHeight_(18)
 			.minWidth_(10)
+			.background_(SPWidgetBase.colOff)
 			.drawFunc_({ |v|
-				var font = Font(Font.defaultMonoFace, 10), str = readoutText, w = v.bounds.width - 4;
+				var font = this.font(10), str = readoutText, idle = str.isEmpty;
+				if (idle) { str = this.defaultHint };
 				Pen.addRect(Rect(0, 0, v.bounds.width, v.bounds.height));
 				Pen.clip;
-				Pen.stringAtPoint(str, Point(2, 1), font, SPWidgetBase.colText);
+				Pen.stringAtPoint(str, Point(8, 2), font, if (idle) { SPWidgetBase.colDim } { SPWidgetBase.colText });
 			});
+		readout.visible = showHints;
+		hintBox = CheckBox()
+			.string_("hints")
+			.font_(this.font(9))
+			.value_(showHints)
+			.canFocus_(false)
+			.action_({ |b| this.class.showHints = b.value });
+		this.prHintAttach(hintBox, "the bar along the bottom that says what the pointer is over - untick to fold it away");
 
-		top = HLayout(*([runButton] ++ this.controls ++ [nil])).spacing_(6).margins_(0);
+		top = HLayout(*([runButton] ++ this.controls ++ [nil, hintBox])).spacing_(6).margins_(0);
 		body = this.prBody;
 		window.layout = VLayout(top, [body, stretch: 1], readout).margins_(6).spacing_(4);
+
+		// A button ignores a move with no button down and a disabled control
+		// hears nothing, so Qt hands the move to the window: the window looks
+		// up which hinted control the pointer is over. Over none, the bar goes
+		// back to saying how to find your way.
+		window.view.mouseOverAction_({ |top, x, y| this.prHintAt(top, x, y); nil });
 
 		window.view.keyDownAction_({ |v, char, mods, unicode, keycode|
 			case
@@ -150,8 +184,7 @@ SPWindow {
 			.clipLo_(lo).clipHi_(hi).step_(step ? 1).scroll_step_(step ? 1)
 			.decimals_(if ((step ? 1) < 1) { 2 } { 0 })
 			.value_(value)
-			.toolTip_(hint ? "")
-			.action_({ |b| action.value(b.value) })
+			.action_({ |b| action.value(b.value) }) !? { |v| this.prHintAttach(v, hint) }
 	}
 
 	prMenu {
@@ -162,8 +195,7 @@ SPWindow {
 			.items_(items)
 			.value_(value)
 			.canFocus_(false)
-			.toolTip_(hint ? "")
-			.action_({ |m| action.value(m.value) })
+			.action_({ |m| action.value(m.value) }) !? { |v| this.prHintAttach(v, hint) }
 	}
 
 	prButton {
@@ -173,10 +205,48 @@ SPWindow {
 			.canFocus_(false)
 			.font_(this.font(9))
 			.states_([[str, SPWidgetBase.colText, SPWidgetBase.colPanel]])
-			.toolTip_(hint ? "")
-			.action_({ action.value })
+			.action_({ action.value }) !? { |v| this.prHintAttach(v, hint) }
 	}
 
+	// Give a control its hint: a String, or a Function answering one. The
+	// bar says it while the pointer is over the control. Answers the control.
+	prHintAttach {
+		|view, hint|
+		if (view.isNil or: { hint.isNil }) { ^view };
+		view.acceptsMouseOver = true;
+		view.mouseEnterAction = { this.prReadout(hint.value); nil };
+		view.mouseOverAction = { this.prReadout(hint.value); nil };
+		hinted = hinted.add([view, hint]);
+		^view
+	}
+
+	// the hint of the smallest hinted control under a point of the window, or none
+	prHintAt {
+		|top, x, y|
+		var p, best, bestArea, origin, now = Main.elapsedTime;
+		// a move fires many times a second; a look a frame is plenty
+		if ((now - lastLookup) < 0.03) { ^this };
+		lastLookup = now;
+		origin = try { top.absoluteBounds.origin } ? Point(0, 0);
+		p = Point(x, y) + origin;
+		hinted = (hinted ? []).reject { |pair| pair[0].isClosed };
+		hinted.do { |pair|
+			var r = try { pair[0].absoluteBounds };
+			if (r.notNil and: { r.containsPoint(p) } and: { try { pair[0].visible } ? false }) {
+				if (bestArea.isNil or: { (r.width * r.height) < bestArea }) { best = pair; bestArea = r.width * r.height };
+			};
+		};
+		this.prReadout(best !? { best[1].value } ? "");
+	}
+
+	prSyncHints {
+		if (this.isOpen) {
+			readout.visible = showHints;
+			hintBox.value = showHints;
+		}
+	}
+
+	// what the hint bar says; nothing (nil or "") puts it back to defaultHint
 	prReadout {
 		|str|
 		str = str ? "";
@@ -184,6 +254,9 @@ SPWindow {
 		readoutText = str;
 		if (readout.notNil and: { readout.isClosed.not }) { readout.refresh };
 	}
+
+	// the default hint has changed (another view, held still): say the new one
+	prHintChanged { { if (readout.notNil and: { readout.isClosed.not }) { readout.refresh } }.defer }
 
 	prWheel { |mods, dx, dy| }
 

@@ -272,6 +272,22 @@ SPTree : SPWindow {
 		^nil
 	}
 
+	// How to find your way in the view that is shown: what the hint bar says
+	// while the pointer is over nothing in particular.
+	defaultHint {
+		var held = if (running) { "" } { "held still: left and right step back through the last % s, run (space) follows the server again  ·  ".format(rewind) };
+		^held ++ switch(mode,
+			\tree, { "click a row to inspect it  ·  the triangle folds a group  ·  double click a synth to trace it  ·  up and down move  ·  space holds still" },
+			\busses, { "every bus in use  ·  click one for who writes and reads it  ·  double click to follow where its signal goes" },
+			\problems, { "what looks wrong, the worst first  ·  click one to inspect what it is about  ·  double click to go to that node in the tree" },
+			\path, { "the answer is the first line  ·  then the way out, step by step  ·  click a step to inspect it  ·  double click to follow from there" },
+			\log, { "what happened, newest first  ·  click a line to inspect its node  ·  scroll down and the list holds while new lines arrive" },
+			\recent, { "the synths that have ended, newest first  ·  click one to see what it was" },
+			\buffers, { "the buffers, those in use first  ·  click one to see which synths read it" },
+			\diff, { "what is different since the snapshot  ·  click a change to inspect it  ·  snapshots, at the top, chooses what to compare" },
+			{ "" })
+	}
+
 	title { ^"node tree" }
 	defaultSize { ^Point(1040, 620) }
 	runHint { ^"follow the server or hold still (space) - held still, the strip under this row steps back through the last minute" }
@@ -329,9 +345,8 @@ SPTree : SPWindow {
 				.font_(this.font(9))
 				.fixedHeight_(20).fixedWidth_(90)
 				.string_(filter)
-				.toolTip_("only the rows that contain this")
 				.action_({ |t| this.filter = t.string })
-				.keyUpAction_({ |t| this.filter = t.string }),
+				.keyUpAction_({ |t| this.filter = t.string }) !? { |v| this.prHintAttach(v, "filter: type a word and only the rows that contain it stay (a SynthDef, a group, a bus name)") },
 			this.prButton("open all", 56, { collapsed.clear; this.prRebuild }, "unfold every group"),
 			calmButton = this.prToggle("calm", 44, calm, { |b| this.calm = b },
 				"keep the list readable while things change fast: rows move at most once every % s, and a group that makes many short-lived nodes (a pattern's events) shows them as one line".format(calmTime)),
@@ -340,8 +355,9 @@ SPTree : SPWindow {
 				.canFocus_(false)
 				.font_(this.font(9))
 				.states_([["problems", SPWidgetBase.colText, SPWidgetBase.colPanel]])
-				.toolTip_("what looks wrong: a synth that reads a bus before it is written, synths that pile up, a NaN on a bus, a FAILURE - click to list them")
-				.action_({ this.mode = if (mode == \problems) { \tree } { \problems } }),
+				.action_({ this.mode = if (mode == \problems) { \tree } { \problems } }) !? { |v|
+					this.prHintAttach(v, "what looks wrong: a synth that reads a bus before it is written, synths that pile up, a NaN on a bus, a FAILURE - red with a count while there is any; click to list them, again for the tree")
+				},
 			this.prButton("snapshots", 70, { this.prSnapshotMenu },
 				"keep the tree as it is at this moment, look at one again, see what changed since, write one to disk"),
 			inspectorButton = this.prToggle("inspector", 62, showInspector, { |b| this.showInspector = b },
@@ -359,8 +375,7 @@ SPTree : SPWindow {
 			.states_([[str, SPWidgetBase.colText, SPWidgetBase.colPanel],
 				[str, Color.black, SPWidgetBase.colAccent]])
 			.value_(value.binaryValue)
-			.toolTip_(hint ? "")
-			.action_({ |b| action.value(b.value == 1) })
+			.action_({ |b| action.value(b.value == 1) }) !? { |v| this.prHintAttach(v, hint) }
 	}
 
 	// ------------------------------------------------------------- settings
@@ -1290,6 +1305,7 @@ SPTree : SPWindow {
 		{
 			if (this.isOpen) {
 				countText.string = count;
+				readout !? { if (readout.isClosed.not) { readout.refresh } };
 				this.prSyncProblemsButton;
 				this.prRedraw;
 				strip.refresh;

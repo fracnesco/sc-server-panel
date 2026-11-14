@@ -101,6 +101,7 @@ SPScope : SPScopeWindow {
 	var indexBox, rateMenu, channelsBox, styleMenu, cycleBox, zoomBox;
 
 	title { ^"scope" }
+	defaultHint { ^"point at a trace for its level and time  ·  the wheel zooms the level, sideways or with shift the time  ·  space runs and pauses, escape closes" }
 
 	prInit {
 		|argServer, argKey|
@@ -341,6 +342,7 @@ SPFreqScope : SPScopeWindow {
 	var busBox, sourceMenu, modeMenu, rangeMenu, fftMenu;
 
 	title { ^"freq scope" }
+	defaultHint { ^"point at the spectrum for the frequency, the nearest note and the level  ·  space runs and pauses, escape closes" }
 	defaultSize { ^Point(640, 340) }
 
 	// the analysis, stock's apart from the two channels and the level, which
