@@ -75,7 +75,7 @@ SPTree : SPWindow {
 	var <selBus, <selBuffer, selKey, <pathRoot, pathResult, <diffFrom, <diffTo;
 	var layoutAt = 0, layoutDue, visibleRows = 30, drawPending = false, drawAsked = 0, noteCache, outBusses, treeCounts = #[0, 0];
 	var lean = false, askedAt, answeredAt = 0, leanCursor = 0, snapWanted = false, problemKeys, fails, shownProblems;
-	var dirtBufNames, dirtBufCount, goTimes, askedGroups;
+	var dirtBufNames, dirtBufCount, goTimes, askedGroups, fedBefore, dbShown, busLinger, stripBins, bornDue, lastError;
 
 	*rowH { ^18 }
 	*indent { ^16 }
@@ -115,7 +115,7 @@ SPTree : SPWindow {
 				\Ndef.asClass !? { |cls|
 					cls.all[server.name] !? { |space|
 						space.envir.keysValuesDo { |k, px|
-							px.group !? { |g| labels[g.nodeID] = "Ndef(\\%)".format(k) }
+							px.group !? { |g| labels[g.nodeID] = "Ndef(\\" ++ k ++ ")" }
 						}
 					}
 				}
@@ -154,9 +154,9 @@ SPTree : SPWindow {
 			{ |server, node|
 				var px = this.prProxyOf(server, node[\parent]);
 				px !? {
-					(name: "Ndef(\\%)".format(px.key),
-						text: "the synth playing Ndef(\\%)'s source, % ch %".format(px.key, px.numChannels ? "?", px.rate ? ""),
-						actions: [["post source", { "Ndef(\\%) = %".format(px.key, px.source.asCompileString).postln }]])
+					(name: "Ndef(\\" ++ px.key ++ ")",
+						text: "the synth playing Ndef(\\" ++ px.key ++ ")'s source, % ch %".format(px.numChannels ? "?", px.rate ? ""),
+						actions: [["post source", { ("Ndef(\\" ++ px.key ++ ") = " ++ px.source.asCompileString).postln }]])
 				}
 			},
 			// SuperDirt: a global effect of an orbit, or a synth of one event
@@ -298,12 +298,17 @@ SPTree : SPWindow {
 		expanded = IdentitySet.new;
 		noteCache = IdentityDictionary.new;
 		outBusses = IdentityDictionary.new;
+		dbShown = Dictionary.new;
+		busLinger = IdentityDictionary.new;
 		problems = [];
 		problemKeys = Set.new;
+		fedBefore = Set.new;
 		ranges = [];
 		frames = List.new;
 		snapshots = List.new;
 		log = SPLog.new;
+		stripBins = IdentityDictionary.new;
+		log.onAdd = { |e| this.prStripNote(e) };
 		health = SPHealth.new;
 		watch = SPWatch.new;
 		probe = SPProbe(argServer, { this.prProbed });
@@ -620,9 +625,9 @@ SPTree : SPWindow {
 			this.prLabelNodes;
 			this.prNoteBirths;
 			this.prAbsorb(tree, true);
-			this.prModel;
-			this.prFrame;
-			if (snapWanted) { snapWanted = false; this.prTakeSnapshot };
+			this.prSafely("reading the busses", { this.prModel });
+			this.prSafely("keeping the moment", { this.prFrame });
+			if (snapWanted) { snapWanted = false; this.prSafely("the snapshot", { this.prTakeSnapshot }) };
 			this.prLayoutSoon;
 			// asked right after the tree, so a synth that has ended is not asked for
 			this.prAskSelected;
@@ -715,7 +720,8 @@ SPTree : SPWindow {
 			if (known[id].isNil and: { byId[id].isNil }) {
 				goTimes[id] = [now, parent];
 				node = byId[parent];
-				if (node.notNil and: { node[\children].size <= 64 } and: { (now - (askedGroups[parent] ? 0)) >= 0.05 }) {
+				// (not once the tree is too big for one answer: a group's would overflow too)
+				if (lean.not and: { node.notNil } and: { node[\children].size <= 64 } and: { (now - (askedGroups[parent] ? 0)) >= 0.05 }) {
 					askedGroups[parent] = now;
 					pending[parent] = node[\path];
 					server.sendMsg('/g_queryTree', parent, 1);
@@ -774,6 +780,14 @@ SPTree : SPWindow {
 	prFail {
 		|msg|
 		var text = msg[1..].collect(_.asString).join(" "), found = text.findRegexp("[Nn]ode (-?[0-9]+)"), id;
+		// the server's own word that the tree with its controls is too big for one answer
+		if (text.contains("g_queryTree") and: { text.contains("overflow") }) {
+			if (lean.not) {
+				lean = true;
+				log.add(\note, (text: "the tree with its controls does not fit one answer of the server: the controls are asked for synth by synth from now on"));
+			};
+			^this
+		};
 		if (found.size > 1) { id = found[1][1].asInteger };
 		log.add(\fail, (id: id, def: id !? { (byId[id] ?? { this.recordOf(id) }) !? { |n| n[\def] } }, text: text));
 		fails = fails.add((time: Main.elapsedTime, text: text, id: id)).keep(-20);
@@ -847,7 +861,7 @@ SPTree : SPWindow {
 		};
 		this.prProbeSet;
 		if (viewing.isNil) {
-			list.addAll(SPRouting.problems(model));
+			list.addAll(SPRouting.problems(model, fedBefore));
 			list.addAll(health.check(model[\order], known, history, paused, model[\ios], now));
 			// what a system of its own knows to check
 			checkers.do { |f| (try { f.value(server, model) } ? []).do { |p| if (p.isKindOf(Dictionary)) { list.add(p) } } };
@@ -1208,6 +1222,23 @@ SPTree : SPWindow {
 			text: this.bufferText(bufnum), users: this.prBufferUsers[bufnum] ? [])
 	}
 
+	// One part failing must not stop the rest, nor fill the post window: the
+	// error is posted once every ten seconds, and nil is the answer.
+	prSafely {
+		|what, func|
+		var out, now;
+		try { out = func.value } { |err|
+			now = Main.elapsedTime;
+			if ((now - (lastError ? -100)) > 10) {
+				lastError = now;
+				"SPTree: % failed: %".format(what, err.errorString).warn;
+				err.reportError;
+			};
+			out = nil;
+		};
+		^out
+	}
+
 	// --------------------------------------------------------------- the rows
 
 	// The list is laid out again - rows added, taken away, moved - at most
@@ -1239,16 +1270,18 @@ SPTree : SPWindow {
 			// a list that grows at its top stays at its top
 			if (#[\log, \recent].includes(mode).not or: { offset > 0 }) { anchor = rows[k][\key]; screen = k - offset };
 		};
-		rows = switch(mode,
-			\tree, { this.prTreeRows },
-			\busses, { this.prBusRows },
-			\problems, { this.prProblemRows },
-			\path, { this.prPathRows },
-			\log, { this.prLogRows },
-			\recent, { this.prRecentRows },
-			\buffers, { this.prBufferRows },
-			\diff, { this.prDiffRows },
-			{ [] });
+		rows = this.prSafely("laying out " ++ mode, {
+			switch(mode,
+				\tree, { this.prTreeRows },
+				\busses, { this.prBusRows },
+				\problems, { this.prProblemRows },
+				\path, { this.prPathRows },
+				\log, { this.prLogRows },
+				\recent, { this.prRecentRows },
+				\buffers, { this.prBufferRows },
+				\diff, { this.prDiffRows },
+				{ [] })
+		}) ?? { [this.prHeader("this view could not be laid out: see the post window")] };
 		if (anchor.notNil) {
 			k = rows.detectIndex { |r| r[\key] == anchor };
 			if (k.notNil) { offset = (k - screen).max(0) };
@@ -1285,10 +1318,14 @@ SPTree : SPWindow {
 	// which groups make many short-lived nodes right now: a pattern's events
 	prBusy {
 		|now|
-		var counts = IdentityDictionary.new;
+		var counts = IdentityDictionary.new, lately = IdentityDictionary.new;
 		births.removeAllSuchThat { |b| (now - b[0]) > 3 };
-		births.do { |b| b[1] !? { |p| counts[p] = (counts[p] ? 0) + 1 } };
-		counts.keysValuesDo { |p, n| if ((n / 3) >= busyRate) { busyUntil[p] = now + 5 } };
+		births.do { |b| b[1] !? { |p|
+			counts[p] = (counts[p] ? 0) + 1;
+			if ((now - b[0]) <= 1.5) { lately[p] = (lately[p] ? 0) + 1 };
+		} };
+		// judged on the last second and a half, so a pattern is one line from its first layout
+		lately.keysValuesDo { |p, n| if ((n / 1.5) >= busyRate) { busyUntil[p] = now + 5 } };
 		birthRates = counts;
 	}
 
@@ -1380,15 +1417,32 @@ SPTree : SPWindow {
 
 	prMatches { |str| ^filter.isEmpty or: { str.toLower.contains(filter.toLower) } }
 
-	// the busses in use: hardware first, then the private ones, then control
+	// The busses in use: hardware first, then the private ones, then control.
+	// With calm on, a bus that was in use a moment ago keeps its row for five
+	// seconds, dimmed: a bus only a pattern's events write would come and go.
 	prBusRows {
-		var out = List.new, last;
-		ranges.do { |r|
+		var out = List.new, last, now = Main.elapsedTime, all = ranges, keys = IdentitySet.new;
+		if (calm and: { viewing.isNil }) {
+			ranges.do { |r| var k = this.class.busKey(r[\rate], r[\index]); keys.add(k); busLinger[k] = [r, now] };
+			busLinger.keys.copy.do { |k|
+				if (keys.includes(k).not) {
+					var e = busLinger[k];
+					// not when its channels are part of another row now
+					if ((now - e[1]) > 5 or: { ranges.any { |r| r[\rate] == e[0][\rate] and: { e[0][\index] >= r[\index] } and: { e[0][\index] < (r[\index] + r[\channels]) } } }) {
+						busLinger.removeAt(k)
+					} {
+						all = all.add(e[0].copy.put(\idle, true));
+					}
+				}
+			};
+			all = all.copy.sort { |a, b| if (a[\rate] == b[\rate]) { a[\index] < b[\index] } { a[\rate] == \audio } };
+		};
+		all.do { |r|
 			var section = switch(r[\kind], \out, { "hardware outputs" }, \in, { "hardware inputs" }, \private, { "private audio busses" }, { "control busses" });
 			var names = (r[\w] ++ r[\r]).collect { |id| model[\nodes][id] !? { |n| n[\def].asString } ? "" }.join(" ");
 			if (this.prMatches("% % % %".format(r[\rate], r[\index], r[\name] ? "", names))) {
 				if (section != last) { out.add(this.prHeader(section)); last = section };
-				out.add((type: \bus, key: this.class.busKey(r[\rate], r[\index]), range: r));
+				out.add((type: \bus, key: this.class.busKey(r[\rate], r[\index]), range: r, idle: r[\idle] == true));
 			}
 		};
 		if ((model !? { model[\unknown] } ? 0) > 0) {
@@ -1440,7 +1494,7 @@ SPTree : SPWindow {
 		pathResult = result;
 		out.add(this.prHeader("where " ++ if (pathRoot[\kind] == \synth) { SPRouting.nodeText(model, pathRoot[\id]) } {
 			SPRouting.busText(server, pathRoot[\rate], pathRoot[\index], pathRoot[\channels]) } ++ " goes"));
-		result[\verdicts].do { |v, k| out.add((type: \verdict, key: ("v" ++ k).asSymbol, ok: v[\ok], text: v[\text])) };
+		result[\verdicts].do { |v, k| out.add((type: \verdict, key: ("v" ++ k).asSymbol, ok: v[\ok], side: v[\side] == true, text: v[\text])) };
 		if (result[\verdicts].isEmpty) { out.add((type: \verdict, key: \v0, ok: false, text: "it goes nowhere that can be followed")) };
 		if (pathRoot[\kind] == \synth) {
 			feeds = SPRouting.feedsOf(model, pathRoot[\id]);
@@ -1713,6 +1767,18 @@ SPTree : SPWindow {
 
 	*dbText { |amp| ^if (amp.isNil) { "" } { if (amp < 0.00001) { "silent" } { amp.ampdb.round(1).asInteger.asString ++ " dB" } } }
 
+	// A level as text that holds still long enough to be read: written again
+	// twice a second at most, whatever the bar beside it does. key says whose.
+	steadyDb {
+		|key, amp|
+		var now = Main.elapsedTime, e = dbShown[key];
+		if (e.isNil or: { (now - e[1]) >= 0.5 }) {
+			e = [this.class.dbText(amp), now];
+			dbShown[key] = e;
+		};
+		^e[0]
+	}
+
 	// the light at the left of a row: how much comes out, red for a bad value
 	prLight {
 		|y, rh, amp, bad|
@@ -1752,7 +1818,7 @@ SPTree : SPWindow {
 				Pen.fillColor = SPWidgetBase.colAccent.copy.alpha_(0.22);
 				Pen.fillRect(Rect(0, y, w, rh));
 			};
-			switch(row[\type],
+			this.prSafely("drawing a row", { switch(row[\type],
 				\node, { this.prDrawNode(row, y, w, rh, now, font, bold) },
 				\record, { this.prDrawRecord(row, y, w, rh, now, font) },
 				\events, { this.prDrawEvents(row, y, w, rh) },
@@ -1763,7 +1829,7 @@ SPTree : SPWindow {
 				\verdict, { this.prDrawVerdict(row, y, w, rh, bold) },
 				\step, { this.prDrawStep(row, y, w, rh, font) },
 				\buffer, { this.prDrawBuffer(row, y, w, rh, font) },
-				\diff, { this.prDrawDiff(row, y, w, rh, font) });
+				\diff, { this.prDrawDiff(row, y, w, rh, font) }) });
 		};
 
 		// where we are, when there is more than fits
@@ -1773,9 +1839,14 @@ SPTree : SPWindow {
 			Pen.fillRect(Rect(w - 4, barY, 3, barH));
 		};
 
-		// keep lighting the new ones until their second is up
+		// Keep lighting the new ones until their second is up: one redraw
+		// waiting at a time - each draw asking for another would multiply
+		// (a hundred draws a second under a pattern, measured 2026-11-14).
 		born.keys.copy.do { |id| if ((now - born[id]) > 1) { born.removeAt(id) } };
-		if (born.notEmpty and: { running }) { { this.prRedraw }.defer(0.25) };
+		if (born.notEmpty and: { running } and: { bornDue.isNil or: { now > (bornDue + 1) } }) {
+			bornDue = now + 0.25;
+			{ bornDue = nil; this.prRedraw }.defer(0.25);
+		};
 	}
 
 	prGuides {
@@ -1842,8 +1913,8 @@ SPTree : SPWindow {
 		Pen.fillOval(Rect(x + 1, y + (rh / 2) - 4, 8, 8));
 		Pen.stringAtPoint(def, Point(dx, y + 2), font, SPWidgetBase.colDim);
 		tx = dx + def.bounds(font).width + 6;
-		// to the second: a number that changes ten times a second is not read
-		right = "gone % ago · seen %".format(SPInspector.duration((now - node[\ended]).round(1).max(1)), SPInspector.duration(node[\ended] - node[\born]));
+		// the time it ended, not how long ago: a column of numbers that all tick is not read
+		right = "ended %  ·  lived %".format(SPLog.clock(node[\ended]).drop(-2), SPInspector.duration(node[\ended] - node[\born]));
 		this.prText(right, w - 8, y + 4, nil, \right);
 		room = w - 18 - right.bounds(this.font(9)).width - tx;
 		if (room > 30) { this.prText(this.prFit(node[\id].asString ++ "   " ++ (node[\pathText] ? ""), room), tx, y + 4) };
@@ -1879,7 +1950,7 @@ SPTree : SPWindow {
 		if (r[\rate] == \audio) {
 			level = this.levelOver(r[\index], r[\channels]);
 			bad = viewing.isNil and: { r[\channels].collect { |c| probe.bad(r[\index] + c) }.maxItem > 0 };
-			this.prText(this.class.dbText(level), right, y + 4, nil, \right);
+			this.prText(if (row[\idle] == true) { "" } { this.steadyDb(row[\key], level) }, right, y + 4, nil, \right);
 			this.prLevelBar(right - 52 - barW, y + 6, barW, rh - 12, level, bad);
 			right = right - 60 - barW;
 		} {
@@ -1893,9 +1964,11 @@ SPTree : SPWindow {
 			right = right - 14;
 		};
 		mid = x + 210;
-		text = "%  →  %".format(if (r[\w].isEmpty) { "nothing writes it" } { this.prNames(r[\w]) },
-			if (r[\r].isEmpty) { "nothing reads it" } { this.prNames(r[\r]) });
-		if ((right - mid) > 40) { this.prText(this.prFit(text, right - mid), mid, y + 4, SPWidgetBase.colText) };
+		text = if (row[\idle] == true) { "not in use right now" } {
+			"%  →  %".format(if (r[\w].isEmpty) { "nothing writes it" } { this.prNames(r[\w]) },
+				if (r[\r].isEmpty) { "nothing reads it" } { this.prNames(r[\r]) })
+		};
+		if ((right - mid) > 40) { this.prText(this.prFit(text, right - mid), mid, y + 4, if (row[\idle] == true) { SPWidgetBase.colDim } { SPWidgetBase.colText }) };
 	}
 
 	prDrawProblem {
@@ -1923,9 +1996,10 @@ SPTree : SPWindow {
 
 	prDrawVerdict {
 		|row, y, w, rh, bold|
-		Pen.fillColor = if (row[\ok]) { SPWidgetBase.colGood } { SPWidgetBase.colClip };
+		var side = row[\side] == true, font = if (side) { this.font(10) } { bold };
+		Pen.fillColor = case { row[\ok] } { SPWidgetBase.colGood } { side } { SPWidgetBase.colGrid } { SPWidgetBase.colClip };
 		Pen.fillOval(Rect(9, y + (rh / 2) - 4, 8, 8));
-		Pen.stringAtPoint(this.prFitFont(row[\text], w - 34, bold), Point(24, y + 2), bold, SPWidgetBase.colText);
+		Pen.stringAtPoint(this.prFitFont(row[\text], w - 34, font), Point(24, y + 2), font, if (side) { SPWidgetBase.colDim } { SPWidgetBase.colText });
 	}
 
 	// a step of a path: a synth, a bus with its level, or a remark
@@ -1939,19 +2013,19 @@ SPTree : SPWindow {
 				Pen.fillColor = this.prDefColor(def);
 				Pen.fillOval(Rect(x + 1, y + (rh / 2) - 4, 8, 8));
 				Pen.stringAtPoint(def, Point(x + 14, y + 2), font, if (s[\paused]) { SPWidgetBase.colClip } { SPWidgetBase.colText });
-				this.prText("%%".format(s[\id], if (s[\paused]) { "  paused" } { "" }), x + 20 + def.bounds(font).width, y + 4,
-					if (s[\paused]) { SPWidgetBase.colClip } { nil });
+				this.prText("%%%".format(s[\id], if (s[\paused]) { "  paused" } { "" }, if (s[\again] == true) { "  ·  again: what follows it is above" } { "" }),
+					x + 20 + def.bounds(font).width, y + 4, if (s[\paused]) { SPWidgetBase.colClip } { nil });
 				note !? { this.prText(note, right, y + 4, nil, \right) };
 			},
 			\bus, {
 				var level = if (s[\rate] == \audio) { this.levelOver(s[\index], s[\channels]) };
-				var text = "% %".format(if (s[\feed] == true) { "reads" } { "→" }, SPRouting.busText(server, s[\rate], s[\index], s[\channels]))
+				var text = (x = x + 8; "% %").format(if (s[\feed] == true) { "reads" } { "→" }, SPRouting.busText(server, s[\rate], s[\index], s[\channels]))
 					++ if (s[\end] == true) { "  ·  the way out" } { "" }
 					++ if (s[\feed] == true) {
 						"  ←  " ++ if (s[\from].isEmpty) { "nothing writes it before" } { this.prNames(s[\from]) }
 					} { "" };
 				if (s[\rate] == \audio) {
-					this.prText(this.class.dbText(level), right, y + 4, nil, \right);
+					this.prText(this.steadyDb(row[\key], level), right, y + 4, nil, \right);
 					this.prLevelBar(right - 52 - barW, y + 6, barW, rh - 12, level);
 					right = right - 60 - barW;
 				};
@@ -2059,49 +2133,57 @@ SPTree : SPWindow {
 	// to that moment.
 	prStripNow { ^if (running) { Main.elapsedTime } { freezeTime ? Main.elapsedTime } }
 
+	// what the strip draws, kept as it happens: a half second a bin, [started, ended, mark, snapshot]
+	prStripNote {
+		|e|
+		var b = (e[\time] / 0.5).floor.asInteger, bin = stripBins[b];
+		if (bin.isNil) {
+			bin = [0, 0, 0, false];
+			stripBins[b] = bin;
+			if (stripBins.size > 600) { stripBins.keys.copy.do { |k| if (k < (b - 400)) { stripBins.removeAt(k) } } };
+		};
+		switch(e[\kind],
+			\born, { bin[0] = bin[0] + 1 },
+			\ended, { bin[1] = bin[1] + 1 },
+			\fail, { bin[2] = 2 },
+			\problem, { bin[2] = bin[2].max(1) },
+			\snapshot, { bin[3] = true });
+	}
+
 	prDrawStrip {
 		|v|
-		var w = v.bounds.width, h = v.bounds.height, now = this.prStripNow, bin = 0.5, span = rewind;
-		var nbins = (span / bin).asInteger, ups = Array.fill(nbins, 0), downs = Array.fill(nbins, 0), marks = Array.fill(nbins, 0);
+		var w = v.bounds.width, h = v.bounds.height, now = this.prStripNow, span = rewind;
 		// the first 86 points are for the words: the bars never run under them
-		var gutter = 86, snaps = List.new, edge = (now / bin).ceil * bin, bw = (w - gutter) / nbins, mid = (h / 2).round + 0.5, top, k;
-		k = log.entries.size - 1;
-		while { k >= 0 and: { (edge - log.entries[k][\time]) < span } } {
-			var e = log.entries[k], b = nbins - 1 - ((edge - e[\time]) / bin).floor.asInteger;
-			if (b >= 0 and: { b < nbins }) {
-				switch(e[\kind],
-					\born, { ups[b] = ups[b] + 1 },
-					\ended, { downs[b] = downs[b] + 1 },
-					\fail, { marks[b] = 2 },
-					\problem, { marks[b] = marks[b].max(1) },
-					\snapshot, { snaps.add(b) });
-			};
-			k = k - 1;
-		};
-		top = (ups.maxItem.max(downs.maxItem)).max(4);
+		var gutter = 86, nbins = (span / 0.5).asInteger, last = (now / 0.5).floor.asInteger, bw = (w - gutter) / nbins;
+		var mid = (h / 2).round + 0.5, top = 4, bins;
+		bins = nbins.collect { |k| stripBins[last - nbins + 1 + k] };
+		bins.do { |bin| if (bin.notNil) { top = top.max(bin[0]).max(bin[1]) } };
 		Pen.strokeColor = SPWidgetBase.colGrid.copy.alpha_(0.5);
 		Pen.width = 1;
 		Pen.line(Point(gutter, mid), Point(w, mid));
 		Pen.stroke;
-		nbins.do { |b|
-			var x = gutter + (b * bw);
-			if (ups[b] > 0) {
-				Pen.fillColor = SPWidgetBase.colMeter;
-				Pen.fillRect(Rect(x, mid - ((ups[b] / top) * (mid - 3)), (bw - 1).max(1), (ups[b] / top) * (mid - 3)));
-			};
-			if (downs[b] > 0) {
-				Pen.fillColor = SPWidgetBase.colGrid;
-				Pen.fillRect(Rect(x, mid, (bw - 1).max(1), (downs[b] / top) * (mid - 3)));
-			};
-			if (marks[b] > 0) {
-				Pen.fillColor = if (marks[b] == 2) { SPWidgetBase.colClip } { SPWidgetBase.colAccent };
-				Pen.fillRect(Rect(x, 0, (bw - 1).max(2), 3));
-			};
-		};
-		snaps.do { |b|
-			Pen.strokeColor = SPWidgetBase.colText;
-			Pen.line(Point((gutter + (b * bw)).round + 0.5, 0), Point((gutter + (b * bw)).round + 0.5, h));
-			Pen.stroke;
+		bins.do { |bin, k|
+			if (bin.notNil) {
+				var x = gutter + (k * bw);
+				if (bin[0] > 0) {
+					Pen.fillColor = SPWidgetBase.colMeter;
+					Pen.fillRect(Rect(x, mid - ((bin[0] / top) * (mid - 3)), (bw - 1).max(1), (bin[0] / top) * (mid - 3)));
+				};
+				if (bin[1] > 0) {
+					Pen.fillColor = SPWidgetBase.colGrid;
+					Pen.fillRect(Rect(x, mid, (bw - 1).max(1), (bin[1] / top) * (mid - 3)));
+				};
+				if (bin[2] > 0) {
+					Pen.fillColor = if (bin[2] == 2) { SPWidgetBase.colClip } { SPWidgetBase.colAccent };
+					Pen.fillRect(Rect(x, 0, (bw - 1).max(2), 3));
+				};
+				if (bin[3]) {
+					Pen.strokeColor = SPWidgetBase.colText;
+					Pen.width = 1;
+					Pen.line(Point(x.round + 0.5, 0), Point(x.round + 0.5, h));
+					Pen.stroke;
+				};
+			}
 		};
 		// the moment looked at
 		if (viewing.notNil and: { viewTitle.isNil }) {
@@ -2164,7 +2246,7 @@ SPTree : SPWindow {
 			this.prText("×", 8, y + 3, SPWidgetBase.colDim);
 			this.prText(this.prFit(SPWatch.labelOf(item) ++ if (gone) { "  ·  ended" } { "" }, w - lineW - 130), 24, y + 4,
 				if (gone) { SPWidgetBase.colDim } { SPWidgetBase.colText });
-			text = case { value.isNil } { "" } { audio } { this.class.dbText(value) } { true } { SPInspector.valueString(value) };
+			text = case { value.isNil } { "" } { audio } { this.steadyDb(item[\key], value) } { true } { SPInspector.valueString(value) };
 			this.prText(text, w - lineW - 16, y + 4, SPWidgetBase.colText, \right);
 			// the last moments as a line, between the least and the most of them
 			if (hist.size > 1) {

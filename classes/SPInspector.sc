@@ -35,6 +35,8 @@
 // =====================================================================
 
 SPInspector {
+	classvar <descFinders, foundDescs, missedDescs;
+
 	var <tree, <view, canvas, shownKey, record;
 	var titleText, subText, whatText, stateText, pauseButton, freeButton, controlCells, signalText, insideText;
 	var levelText, listenButton, listenBus, levelsAt = 0;
@@ -58,7 +60,58 @@ SPInspector {
 
 	// ------------------------------------------------------------ what it knows
 
-	*descOf { |def| ^def !? { SynthDescLib.global.at(def.asSymbol) } }
+	// A def's SynthDesc: from the SynthDescLib, where every def made with .add
+	// is, or from whoever else has the SynthDef itself (descFinders: an Ndef
+	// or a ProxySpace's proxy keeps the def of each of its synths). What nobody
+	// knows is asked for again after three seconds, not at every call.
+	*descOf {
+		|def|
+		var key, desc, now;
+		if (def.isNil) { ^nil };
+		key = def.asSymbol;
+		desc = SynthDescLib.global.at(key);
+		if (desc.notNil) { ^desc };
+		desc = foundDescs[key];
+		if (desc.notNil) { ^desc };
+		now = Main.elapsedTime;
+		if ((now - (missedDescs[key] ? -100)) < 3) { ^nil };
+		descFinders.do { |f| if (desc.isNil) { desc = try { f.value(key) } } };
+		if (desc.isNil) {
+			missedDescs[key] = now;
+			if (missedDescs.size > 2000) { missedDescs.clear };
+		} {
+			foundDescs[key] = desc;
+			if (foundDescs.size > 500) { foundDescs.clear };
+		};
+		^desc
+	}
+
+	*initClass {
+		foundDescs = IdentityDictionary.new;
+		missedDescs = IdentityDictionary.new;
+		descFinders = List[
+			// JITLib: a proxy's objects each keep the SynthDef they built
+			{ |key|
+				var spaces = [], out;
+				\Ndef.asClass !? { |cls| spaces = spaces ++ cls.all.values };
+				\ProxySpace.asClass !? { |cls|
+					spaces = spaces ++ (cls.all !? { |a| a.values } ? []);
+					[currentEnvironment, topEnvironment].do { |e| if (e.isKindOf(cls)) { spaces = spaces.add(e) } };
+				};
+				spaces.do { |space|
+					space.envir.do { |px|
+						if (out.isNil and: { px.respondsTo(\objects) }) {
+							px.objects.do { |obj|
+								var sd = obj.tryPerform(\synthDef);
+								if (out.isNil and: { sd.notNil } and: { sd.name.asSymbol == key }) { out = sd.asSynthDesc }
+							}
+						}
+					}
+				};
+				out
+			}
+		];
+	}
 
 	// how many control values a SynthDesc's synth has
 	*numControls {
@@ -233,7 +286,7 @@ SPInspector {
 
 	*ioText {
 		|r, level|
-		^this.prIoText(r) ++ (level !? { |l| "  ·  " ++ SPTree.dbText(l) } ? "")
+		^this.prIoText(r) ++ (level !? { |l| "  ·  " ++ if (l.isString) { l } { SPTree.dbText(l) } } ? "")
 	}
 
 	*prIoText {
@@ -252,9 +305,11 @@ SPInspector {
 			"gone % ago%".format(this.duration(now - record[\ended]),
 				record[\born] !? { |b| ", seen for " ++ this.duration(record[\ended] - b) } ? "")
 		}
-		{ record[\paused] == true } { "paused" ++ (record[\pausedSince] !? { |t| " for " ++ this.duration(now - t) } ? "") }
+		{ record[\frozen] == true } { if (record[\paused] == true) { "paused, at that moment" } { "running, at that moment" } }
+		// to the second: a number that changes faster is not read
+		{ record[\paused] == true } { "paused" ++ (record[\pausedSince] !? { |t| " for " ++ this.duration((now - t).round(1).max(1)) } ? "") }
 		{ true } {
-			"running" ++ (record[\born] !? { |b| ", seen for " ++ this.duration(now - b) } ? "")
+			"running" ++ (record[\born] !? { |b| ", seen for " ++ this.duration((now - b).round(1).max(1)) } ? "")
 		}
 	}
 
@@ -529,7 +584,9 @@ SPInspector {
 			if (this.class.descOf(record[\def]).isNil) { "not known without its SynthDesc" } { "no In or Out" }
 		} {
 			io.collect { |r|
-				this.class.ioText(r, if (r[\rate] == \audio and: { r[\bus].notNil } and: { record[\gone] != true }) { tree.levelOver(r[\bus], r[\channels]) })
+				this.class.ioText(r, if (r[\rate] == \audio and: { r[\bus].notNil } and: { record[\gone] != true }) {
+					tree.levelOver(r[\bus], r[\channels]) !? { |l| tree.steadyDb(("i" ++ r[\dir] ++ r[\bus]).asSymbol, l) }
+				})
 			}.join("\n")
 		};
 	}
@@ -559,7 +616,7 @@ SPInspector {
 	prBusLevelText {
 		|rec|
 		^if (rec[\rate] == \audio) {
-			tree.levelOver(rec[\index], rec[\channels]) !? { |l| "level now: " ++ SPTree.dbText(l) } ? "level: not measured"
+			tree.levelOver(rec[\index], rec[\channels]) !? { |l| "level now: " ++ tree.steadyDb(("ib" ++ rec[\index]).asSymbol, l) } ? "level: not measured"
 		} {
 			tree.probe.kval(rec[\index]) !? { |v| "value now: " ++ this.class.valueString(v) } ? "value: not asked for yet"
 		}
