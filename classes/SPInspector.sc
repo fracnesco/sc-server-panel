@@ -19,8 +19,13 @@
 //   - the UGens inside it.
 //
 // And buttons: trace (/n_trace, into the post window), pause and run,
-// free, scope the bus it writes, open its source, copy code that reaches
-// it, post all of this.
+// free, scope or listen to the bus it writes, see where its sound goes
+// (path), open its source, copy code that reaches it, post all of this. A
+// control can be watched (w): its value stays in view under the tree.
+//
+// A bus (click one in the busses view, or in a path) shows who writes it
+// and who reads it, in the order they run, its level, and what looks
+// wrong with it. A buffer shows its file and the synths that read it.
 //
 // What the SynthDef says (defaults, busses, UGens) is only known when this
 // sclang has its SynthDesc - every def made with .add here has one.
@@ -32,6 +37,7 @@
 SPInspector {
 	var <tree, <view, canvas, shownKey, record;
 	var titleText, subText, whatText, stateText, pauseButton, freeButton, controlCells, signalText, insideText;
+	var levelText, listenButton, listenBus, levelsAt = 0;
 	var freeArmed = false;
 
 	*new { |tree| ^super.newCopyArgs(tree).init }
@@ -226,6 +232,11 @@ SPInspector {
 	}
 
 	*ioText {
+		|r, level|
+		^this.prIoText(r) ++ (level !? { |l| "  ·  " ++ SPTree.dbText(l) } ? "")
+	}
+
+	*prIoText {
 		|r|
 		^"% % % ch, %%".format(if (r[\dir] == \in) { "reads" } { "writes" }, r[\rate], r[\channels],
 			r[\bus] !? { |b| "bus %".format(b) } ? "a bus worked out in the graph",
@@ -277,7 +288,13 @@ SPInspector {
 		var key;
 		record = argRecord;
 		if (view.isClosed) { ^this };
-		key = record !? { [record[\id], record[\kind], record[\gone], this.class.controlRows(record).collect { |r| [r[\label], r[\array]] }] };
+		key = record !? {
+			switch(record[\kind],
+				\bus, { [\bus, record[\rate], record[\index], record[\channels], record[\writers], record[\readers], record[\problems].collect { |p| p[\key] }] },
+				\buffer, { [\buffer, record[\bufnum], record[\users], record[\text]] },
+				{ [record[\id], record[\kind], record[\gone], record[\frozen], this.class.controlRows(record).collect { |r| [r[\label], r[\array]] },
+					(record[\problems] ? []).collect { |p| p[\key] }, (record[\buffers] ? []).collect { |b| b[1] }] })
+		};
 		if (key != shownKey) { shownKey = key; freeArmed = false; this.prBuild(record) } { this.prUpdate };
 	}
 
@@ -315,6 +332,9 @@ SPInspector {
 			view.canvas = canvas;
 			^this
 		};
+		levelText = nil; listenButton = nil; listenBus = nil; signalText = nil; pauseButton = nil; stateText = nil;
+		if (rec[\kind] == \bus) { ^this.prBuildBus(rec) };
+		if (rec[\kind] == \buffer) { ^this.prBuildBuffer(rec) };
 		d = SPTree.describe(server, rec);
 		desc = this.class.descOf(rec[\def]);
 
@@ -330,6 +350,11 @@ SPInspector {
 		items.add(whatText);
 		stateText = StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colDim).string_(this.class.stateOf(rec));
 		items.add(stateText);
+		// what looks wrong with it
+		(rec[\problems] ? []).do { |p|
+			items.add(StaticText().font_(this.font(9)).string_(p[\text])
+				.stringColor_(if (p[\level] == \info) { SPWidgetBase.colDim } { SPWidgetBase.colClip }))
+		};
 
 		// the buttons
 		if (rec[\kind] == \synth) {
@@ -358,14 +383,28 @@ SPInspector {
 			"a line of code that reaches it, onto the clipboard and into the post window"));
 		buttons.add(this.prSmallButton("post", { this.class.textOf(record, server).postln },
 			"all of this, as text, into the post window"));
-		// what has ended can not be traced, paused or freed (a disabled Button looks the same in Qt)
-		if (rec[\gone] == true) { buttons = buttons.reject { |b| [pauseButton, freeButton, buttons[0]].includes(b) }; pauseButton = nil };
+		// what has ended, or is a kept moment, can not be traced, paused or freed (a disabled Button looks the same in Qt)
+		if (rec[\gone] == true or: { rec[\frozen] == true }) {
+			buttons = buttons.reject { |b| [pauseButton, freeButton, buttons[0]].includes(b) }; pauseButton = nil
+		};
 
 		io = if (rec[\kind] == \synth) { this.class.ioRows(rec, server) } { [] };
+		if (rec[\kind] == \synth and: { rec[\gone] != true }) {
+			extra.add(this.prSmallButton("path", { tree.showPath(rec[\id]) },
+				"where its sound goes, bus by bus, to the outputs - and where it stops", 44));
+		};
 		io.detect { |r| r[\dir] == \out and: { r[\bus].notNil } } !? { |r|
 			extra.add(this.prSmallButton("scope out", {
 				SPScope(server).index_(r[\bus]).numChannels_(r[\channels]).rate_(r[\rate]).front
-			}, "the bus it writes (%), in the scope - what is on it, not only this synth's part".format(r[\bus]), 70))
+			}, "the bus it writes (%), in the scope - what is on it, not only this synth's part".format(r[\bus]), 70));
+			if (r[\rate] == \audio and: { rec[\gone] != true } and: { rec[\frozen] != true }) {
+				extra.add(this.prSmallButton("freq", { SPFreqScope(server).inBus_(r[\bus]).front },
+					"the bus it writes (%), in the frequency scope".format(r[\bus]), 44));
+				listenBus = [r[\bus], r[\channels]];
+				listenButton = this.prSmallButton("listen", { tree.listen(r[\bus], r[\channels]) },
+					"hear the bus it writes (%) on the outputs, beside what plays there - again to stop".format(r[\bus]), 50);
+				extra.add(listenButton);
+			};
 		};
 		d[\file] !? { |path|
 			extra.add(this.prSmallButton("source", { this.class.openSource(path) }, "open " ++ path, 58))
@@ -387,6 +426,11 @@ SPInspector {
 			items.add(this.prHeading("busses"));
 			signalText = StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colText);
 			items.add(signalText);
+			if ((rec[\buffers] ? []).notEmpty) {
+				items.add(this.prHeading("buffers"));
+				items.add(StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colText)
+					.string_(rec[\buffers].collect { |b| "% = %  %".format(b[0], b[1], b[2] ? "") }.join("\n")));
+			};
 			items.add(this.prHeading("inside"));
 			insideText = StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colText)
 				.string_(this.class.ugenSummary(desc) ? "its SynthDef is not in this sclang's SynthDescLib, so its busses and UGens are not known");
@@ -429,6 +473,16 @@ SPInspector {
 			grid.add(name, k, 0);
 			grid.add(cell, k, 1);
 			grid.add(def, k, 2);
+			if (r[\array] != true and: { rec[\gone] != true } and: { rec[\frozen] != true }) {
+				var what = (kind: \control, id: rec[\id], index: r[\index], name: r[\label], def: rec[\def]);
+				var on = tree.isWatched(what);
+				grid.add(this.prHint(Button()
+					.fixedHeight_(16).fixedWidth_(18).canFocus_(false).font_(this.font(8))
+					.states_([["w", SPWidgetBase.colDim, SPWidgetBase.colPanel], ["w", Color.black, SPWidgetBase.colAccent]])
+					.value_(on.binaryValue)
+					.action_({ tree.watchToggle(what) }),
+					"watch %: its value stays in view under the tree, with its last moments as a line".format(r[\label])), k, 3);
+			};
 		};
 		grid.setColumnStretch(0, 1);
 		^View().layout_(grid.margins_(0).spacing_(2))
@@ -438,6 +492,8 @@ SPInspector {
 	prUpdate {
 		var rows, server = this.server;
 		if (record.isNil or: { view.isClosed }) { ^this };
+		if (record[\kind] == \bus) { levelText !? { |t| t.string = this.prBusLevelText(record) }; ^this.prListenState };
+		if (record[\kind] == \buffer) { ^this };
 		stateText !? { stateText.string = this.class.stateOf(record) };
 		pauseButton !? {
 			pauseButton.states = [[if (record[\paused] == true) { "run" } { "pause" }, SPWidgetBase.colText, SPWidgetBase.colPanel]]
@@ -460,11 +516,132 @@ SPInspector {
 				}
 			}
 		};
-		signalText !? {
-			var io = this.class.ioRows(record, server);
-			signalText.string = if (io.isEmpty) {
-				if (this.class.descOf(record[\def]).isNil) { "not known without its SynthDesc" } { "no In or Out" }
-			} { io.collect { |r| this.class.ioText(r) }.join("\n") };
+		this.prSignal;
+		this.prListenState;
+	}
+
+	// the busses a synth reads and writes, each with what is on it now
+	prSignal {
+		var server = this.server, io;
+		if (signalText.isNil or: { record.isNil } or: { record[\kind] != \synth }) { ^this };
+		io = this.class.ioRows(record, server);
+		signalText.string = if (io.isEmpty) {
+			if (this.class.descOf(record[\def]).isNil) { "not known without its SynthDesc" } { "no In or Out" }
+		} {
+			io.collect { |r|
+				this.class.ioText(r, if (r[\rate] == \audio and: { r[\bus].notNil } and: { record[\gone] != true }) { tree.levelOver(r[\bus], r[\channels]) })
+			}.join("\n")
 		};
+	}
+
+	prListenState {
+		listenButton !? { |b|
+			if (b.isClosed.not and: { listenBus.notNil }) {
+				var on = tree.isListeningTo(listenBus[0]);
+				b.states = [["listen", if (on) { Color.black } { SPWidgetBase.colText }, if (on) { SPWidgetBase.colAccent } { SPWidgetBase.colPanel }]];
+			}
+		}
+	}
+
+	// The levels have moved: what shows one is written again, four times a
+	// second at most - a number that changes faster is not read.
+	levels {
+		var now = Main.elapsedTime;
+		if (view.isClosed or: { record.isNil } or: { (now - levelsAt) < 0.25 }) { ^this };
+		levelsAt = now;
+		if (record[\kind] == \bus) {
+			levelText !? { |t| if (t.isClosed.not) { t.string = this.prBusLevelText(record) } }
+		} { this.prSignal };
+	}
+
+	// ------------------------------------------------------------------ a bus
+
+	prBusLevelText {
+		|rec|
+		^if (rec[\rate] == \audio) {
+			tree.levelOver(rec[\index], rec[\channels]) !? { |l| "level now: " ++ SPTree.dbText(l) } ? "level: not measured"
+		} {
+			tree.probe.kval(rec[\index]) !? { |v| "value now: " ++ this.class.valueString(v) } ? "value: not asked for yet"
+		}
+	}
+
+	prNodeButtons {
+		|ids, empty|
+		var server = this.server;
+		if (ids.isEmpty) {
+			^[StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colDim).string_(empty)]
+		};
+		^ids.collect { |id|
+			var rec = tree.recordOf(id), def = (rec !? { rec[\def] } ? "?").asString;
+			var name = rec !? { SPTree.describe(server, rec)[\name] };
+			this.prHint(Button()
+				.fixedHeight_(18).canFocus_(false).font_(this.font(9))
+				.states_([["%  %%".format(def, id, name !? { |n| "  ·  " ++ n } ? ""), SPTree.defColor(def), SPWidgetBase.colPanel]])
+				.action_({ tree.inspect(id) }), "show % (%) in the tree".format(def, id))
+		}
+	}
+
+	prBuildBus {
+		|rec|
+		var items = List.new, server = this.server, buttons = List.new, what;
+		var num = if (rec[\channels] > 1) { "%-%".format(rec[\index], rec[\index] + rec[\channels] - 1) } { rec[\index].asString };
+		items.add(StaticText().font_(this.font(12, true)).stringColor_(SPWidgetBase.colMeter)
+			.string_("% bus %".format(rec[\rate], num)));
+		items.add(StaticText().font_(this.font(9)).stringColor_(SPWidgetBase.colDim)
+			.string_("%%".format(rec[\name] !? { |n| n ++ "  ·  " } ? "",
+				switch(rec[\busKind], \out, { "a hardware output" }, \in, { "a hardware input" }, \private, { "a private audio bus" }, { "a control bus" }))));
+		levelText = StaticText().font_(this.font(10)).stringColor_(SPWidgetBase.colText).string_(this.prBusLevelText(rec));
+		items.add(levelText);
+		rec[\problems].do { |p|
+			items.add(StaticText().font_(this.font(9)).string_(p[\text])
+				.stringColor_(if (p[\level] == \info) { SPWidgetBase.colDim } { SPWidgetBase.colClip }))
+		};
+		if (rec[\rate] == \audio) {
+			buttons.add(this.prSmallButton("path", { tree.showPath([rec[\rate], rec[\index], rec[\channels]]) },
+				"where what is on this bus goes, to the outputs", 44));
+			buttons.add(this.prSmallButton("scope", { SPScope(server).index_(rec[\index]).numChannels_(rec[\channels]).rate_(\audio).front },
+				"this bus in the scope", 50));
+			buttons.add(this.prSmallButton("freq", { SPFreqScope(server).inBus_(rec[\index]).front }, "this bus in the frequency scope", 44));
+			listenBus = [rec[\index], rec[\channels]];
+			listenButton = this.prSmallButton("listen", { tree.listen(rec[\index], rec[\channels]) },
+				"hear this bus on the outputs, beside what plays there - again to stop", 50);
+			buttons.add(listenButton);
+		} {
+			buttons.add(this.prSmallButton("scope", { SPScope(server).index_(rec[\index]).numChannels_(rec[\channels]).rate_(\control).front },
+				"this bus in the scope", 50));
+		};
+		what = (kind: \bus, rate: rec[\rate], index: rec[\index], name: rec[\name]);
+		buttons.add(this.prHint(Button()
+			.fixedHeight_(20).fixedWidth_(50).canFocus_(false).font_(this.font(9))
+			.states_([["watch", SPWidgetBase.colText, SPWidgetBase.colPanel], ["watch", Color.black, SPWidgetBase.colAccent]])
+			.value_(tree.isWatched(what).binaryValue)
+			.action_({ tree.watchToggle(what) }), "keep this bus in view under the tree, with its last moments as a line"));
+		items.add(HLayout(*(buttons.asArray ++ [nil])).spacing_(4));
+		items.add(this.prHeading("written by, in the order they run"));
+		this.prNodeButtons(rec[\writers], "nothing in the tree writes it right now").do { |b| items.add(b) };
+		items.add(this.prHeading("read by"));
+		this.prNodeButtons(rec[\readers], "nothing in the tree reads it").do { |b| items.add(b) };
+		canvas.layout = VLayout(*(items.array ++ [nil])).margins_(8).spacing_(6);
+		view.canvas = canvas;
+		this.prListenState;
+	}
+
+	// ------------------------------------------------------------------ a buffer
+
+	prBuildBuffer {
+		|rec|
+		var items = List.new, buf = rec[\buffer];
+		items.add(StaticText().font_(this.font(12, true)).stringColor_(SPWidgetBase.colText).string_("buffer %".format(rec[\bufnum])));
+		items.add(StaticText().font_(this.font(10)).stringColor_(SPWidgetBase.colText)
+			.string_([rec[\name], buf !? { buf.path }, buf !? {
+				"% frames, % ch, % Hz".format(buf.numFrames ? "?", buf.numChannels ? "?", buf.sampleRate ? "?")
+			} ?? { "this sclang did not make it: nothing more is known" }].reject(_.isNil).join("\n")));
+		buf !? {
+			items.add(HLayout(this.prSmallButton("plot", { buf.plot }, "the buffer's contents in a plot window", 44), nil));
+		};
+		items.add(this.prHeading("read by"));
+		this.prNodeButtons(rec[\users], "no synth's controls name it right now").do { |b| items.add(b) };
+		canvas.layout = VLayout(*(items.array ++ [nil])).margins_(8).spacing_(6);
+		view.canvas = canvas;
 	}
 }
