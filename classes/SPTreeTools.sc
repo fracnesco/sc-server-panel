@@ -18,9 +18,10 @@
 // =====================================================================
 
 SPLog {
-	classvar <>maxEntries = 3000, <>burstTime = 1.0, <>burstSpan = 5;
+	classvar <>maxEntries = 3000, <>burstTime = 1.0, <>burstSpan = 15;
 
 	var <entries, serial = 0, <startedAt;
+	var <>onAdd;		// { |entry| } called with every entry as it is added
 
 	*new { ^super.new.init }
 
@@ -36,7 +37,8 @@ SPLog {
 		e[\time] = e[\time] ? Main.elapsedTime;
 		e[\serial] = serial;
 		entries.add(e);
-		while { entries.size > maxEntries } { entries.removeAt(0) };
+		if (entries.size > (maxEntries + 200)) { entries = entries.copyRange(entries.size - maxEntries, entries.size - 1).asList };
+		onAdd.value(e);
 		^e
 	}
 
@@ -107,6 +109,8 @@ SPLog {
 		who = case
 		{ e[\def].notNil } { "% %".format(e[\def], if (count > 1) { "×" ++ count } { e[\id] ? "" }) }
 		{ e[\id].notNil and: { count > 1 } } { "% ×%".format(e[\nodeKind] ? "node", count) }
+		// a problem's or a failure's text names its node itself
+		{ #[\problem, \fail, \cleared].includes(e[\kind]) } { "" }
 		{ e[\id].notNil } { "% %".format(e[\nodeKind] ? "node", e[\label] !? { |l| "% (%)".format(l, e[\id]) } ? e[\id]) }
 		{ true } { "" };
 		^"%  %%%%".format(this.what(e).padRight(8), who,
@@ -477,25 +481,38 @@ SPSnapshot {
 		^out.array
 	}
 
-	// the longest run of ids in the same order in both lists
+	// The longest run of ids in the same order in both lists. What the lists
+	// share at their start and at their end is in step by itself; only the
+	// middle, where they differ, is worked out.
 	*prLongestCommon {
 		|x, y|
-		var n = x.size, m = y.size, table, out = List.new, i, j;
-		if (n == 0 or: { m == 0 }) { ^[] };
-		// two long lists: the cheap answer, what is at the same place counting from the start
-		if ((n * m) > 400000) { ^x.select { |id, k| y[k] == id } };
-		table = Array.fill(n + 1, { Array.fill(m + 1, 0) });
-		n.do { |a| m.do { |b|
-			table[a + 1][b + 1] = if (x[a] == y[b]) { table[a][b] + 1 } { max(table[a][b + 1], table[a + 1][b]) }
-		} };
-		i = n; j = m;
-		while { i > 0 and: { j > 0 } } {
-			case
-			{ x[i - 1] == y[j - 1] } { out.add(x[i - 1]); i = i - 1; j = j - 1 }
-			{ table[i - 1][j] >= table[i][j - 1] } { i = i - 1 }
-			{ true } { j = j - 1 };
+		var head = 0, tail = 0, n, m, table, out = List.new, i, j, mx, my;
+		while { head < x.size and: { head < y.size } and: { x[head] == y[head] } } { head = head + 1 };
+		while { tail < (x.size - head) and: { tail < (y.size - head) } and: { x[x.size - 1 - tail] == y[y.size - 1 - tail] } } { tail = tail + 1 };
+		mx = x.copyRange(head, x.size - 1 - tail);
+		my = y.copyRange(head, y.size - 1 - tail);
+		if ((x.size - head - tail) <= 0) { mx = [] };
+		if ((y.size - head - tail) <= 0) { my = [] };
+		n = mx.size; m = my.size;
+		case
+		{ n == 0 or: { m == 0 } } { }
+		// two long middles: the cheap answer, what is at the same place
+		{ (n * m) > 60000 } { mx.do { |id, k| if (my[k] == id) { out.add(id) } } }
+		{ true } {
+			table = Array.fill(n + 1, { Array.fill(m + 1, 0) });
+			n.do { |a| m.do { |b|
+				table[a + 1][b + 1] = if (mx[a] == my[b]) { table[a][b] + 1 } { max(table[a][b + 1], table[a + 1][b]) }
+			} };
+			i = n; j = m;
+			while { i > 0 and: { j > 0 } } {
+				case
+				{ mx[i - 1] == my[j - 1] } { out.add(mx[i - 1]); i = i - 1; j = j - 1 }
+				{ table[i - 1][j] >= table[i][j - 1] } { i = i - 1 }
+				{ true } { j = j - 1 };
+			};
+			out = out.reverse;
 		};
-		^out.array.reverse
+		^x.keep(head) ++ out.asArray ++ x.keep(tail.neg)
 	}
 
 	// ------------------------------------------------------------------ text
