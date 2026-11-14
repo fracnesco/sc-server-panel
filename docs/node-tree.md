@@ -10,6 +10,13 @@ SPTree(s);
 SPTree(s).mode = \busses;          // or pick it in the menu at the top left
 ```
 
+New to it? Start with the [tutorial](node-tree-tutorial.md).
+
+The **hint bar** along the bottom says what the pointer is over - every button,
+row and step has a hint - and, over nothing in particular, how to find your way
+in the view that is shown. The **hints** box at the top right folds it away, in
+all of ServerPanel's windows at once (`SPWindow.showHints = false`).
+
 ## The views
 
 | view | the question it answers |

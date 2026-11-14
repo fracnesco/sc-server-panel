@@ -12,7 +12,10 @@ list::
 ## A click on a row shows what it is about in the strong::inspector:: at the right (link::Classes/SPInspector::): a node, a bus or a buffer. Up and down move the selection.
 ## A node that has just appeared is lit in orange for a second.
 ## The filter keeps the rows that contain what you type.
+## The strong::hint bar:: along the bottom says what the pointer is over - every control, row and step has a hint - and, over nothing, how to find your way in the view that is shown. The strong::hints:: box at the top right folds it away (link::#*showHints::).
 ::
+
+The repository's code::docs/node-tree-tutorial.md:: walks through the window from the first click.
 
 subsection:: The views
 
@@ -107,6 +110,9 @@ RETURNS:: a link::Classes/String::, or nil
 METHOD:: checkers
 A link::Classes/List:: of functions code::{ |server, model| }:: answering an Array of problems only a system of yours knows to look for. code::model:: is link::Classes/SPRouting::'s. A problem is an Event: code::level:: (code::\warn:: or code::\info::), code::text::, code::key:: (a String that stays the same while the problem does), and code::id:: (a node) or code::bus:: (code::[rate, index]::) to say what it is about. An error in one is ignored.
 
+METHOD:: showHints
+Whether the hint bar shows, in every window of the family (the scopes and the meters have one too). The strong::hints:: box sets it.
+
 METHOD:: modes
 The views, as Symbols: code::\tree \busses \problems \path \log \recent \buffers \diff::.
 
@@ -168,6 +174,9 @@ Only the synths whose def contains this, and the groups they are in; an empty st
 
 METHOD:: mode
 What the list shows, one of link::#*modes::.
+
+METHOD:: defaultHint
+What the hint bar says while the pointer is over nothing in particular: how to find your way in the view that is shown, and, held still, how to step back.
 
 METHOD:: calm
 Whether the list is kept readable while the server changes fast (see above). True by default.

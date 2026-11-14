@@ -159,7 +159,10 @@ most every 0.7 s, what you are looking at stays where it is, and a group that
 makes many short-lived nodes shows them as one line. The strip under the top row
 is the last minute and a half: hold the window still (space) and click it, or
 press left and right, to step back. **snapshots** keeps a moment, compares two,
-writes one to disk. [docs/node-tree.md](docs/node-tree.md) has all of it.
+writes one to disk. The hint bar along the bottom says what the pointer is
+over and, over nothing, how to use the view you are in; **hints** folds it away.
+[docs/node-tree-tutorial.md](docs/node-tree-tutorial.md) walks through it,
+[docs/node-tree.md](docs/node-tree.md) is the reference.
 
 ```supercollider
 SPTree(s).mode = \busses;
@@ -225,7 +228,7 @@ SPTree.busNamers.addFirst({ |server, rate, index| if (rate == \audio and: { inde
 | file | what it is |
 |---|---|
 | [classes/ServerPanel.sc](classes/ServerPanel.sc) | the panel and its widgets: `ServerPanel`, `SPWidgetBase` (colours, the optional extensions), `SPStatusWidget`, `SPMasterFxWidget`, `SPScopeWidget`, `SPHistoryWidget`, `SPVolumeWidget`, `SPRecordWidget` |
-| [classes/SPWindow.sc](classes/SPWindow.sc) | `SPWindow`, what the four windows share: one per server, the top row, run and pause, the server hooks |
+| [classes/SPWindow.sc](classes/SPWindow.sc) | `SPWindow`, what the four windows share: one per server, the top row, the hint bar and its **hints** box, run and pause, the server hooks |
 | [classes/SPScopes.sc](classes/SPScopes.sc) | `SPScopeWindow`, and the two scopes on it: `SPScope`, `SPFreqScope` |
 | [classes/SPMeter.sc](classes/SPMeter.sc) | `SPMeter`, the level meters |
 | [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree and its views, and what it knows: labellers, describers, bus names, checkers, history |
@@ -235,6 +238,7 @@ SPTree.busNamers.addFirst({ |server, rate, index| if (rate == \audio and: { inde
 | [classes/SPInspector.sc](classes/SPInspector.sc) | `SPInspector`, the panel at the right of the tree: everything about one node |
 | [classes/SystemOverwrites/extServer.sc](classes/SystemOverwrites/extServer.sc) | `s.scope`, `s.freqscope`, `s.meter`, `s.plotTree` opening the four windows, with the stock bodies for `replaceStockWindows = false` |
 | [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree`, `SPInspector`, `SPRouting`, `SPProbe`, `SPSnapshot`, `SPLog`, `SPHealth`, `SPWatch` |
+| [docs/node-tree-tutorial.md](docs/node-tree-tutorial.md) | the node tree from the first click: read a row, inspect, find why something is silent, go back in time |
 | [docs/node-tree.md](docs/node-tree.md) | debugging with the node tree: every view, the rules behind the problems, how it stays readable, what it can not know |
 | [Test/ServerPanel_unittest.scd](Test/ServerPanel_unittest.scd) | ServerView's unit test, renamed |
 | [install.scd](install.scd) | links a clone into the extensions folder, checks, unlinks |
