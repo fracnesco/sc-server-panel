@@ -1,0 +1,84 @@
+TITLE:: SPLog
+summary:: what happened on the server, a line each, bursts as one line
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPSnapshot
+
+DESCRIPTION::
+link::Classes/SPTree::'s log: every node that started, ended, was paused or resumed, every FAILURE the server sent, every problem that came and went, every snapshot, each with its time. As rows, entries of one kind, SynthDef and place that follow each other less than link::#*burstTime:: apart are one row with a count, for link::#*burstSpan:: seconds at most: a pattern's events read as a line every few seconds. Language only; it keeps the last link::#*maxEntries::.
+
+code::
+l = SPLog.new;
+l.add(\born, (id: 1001, def: \mine, pathText: "default group"));
+l.add(\born, (id: 1002, def: \mine, pathText: "default group"));
+l.rows.do { |r| SPLog.lineOf(r).postln };
+l.text.postln;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+An empty log.
+
+METHOD:: maxEntries
+How many entries are kept: 3000.
+
+METHOD:: burstTime
+The most seconds between two entries of one burst: 1.
+
+METHOD:: burstSpan
+The most seconds a burst row covers: 15.
+
+METHOD:: lineOf
+An entry, or a burst row, as a line of text without the time.
+ARGUMENT:: e
+An entry.
+
+METHOD:: clock
+An elapsed time on the wall clock: code::"14:03:22.5"::.
+ARGUMENT:: time
+A time as code::Main.elapsedTime:: counts.
+
+METHOD:: what
+The first word of an entry's line: started, ended, paused ...
+ARGUMENT:: e
+An entry.
+
+INSTANCEMETHODS::
+
+METHOD:: add
+Add an entry.
+ARGUMENT:: kind
+code::\born \ended \paused \resumed \fail \problem \cleared \snapshot \note::.
+ARGUMENT:: more
+An Event of whatever else is known: code::id::, code::def::, code::pathText::, code::parent::, code::lived::, code::text::.
+RETURNS:: the entry
+
+METHOD:: rows
+The entries as rows, newest first.
+ARGUMENT:: bursts
+Whether bursts are one row.
+ARGUMENT:: filter
+Only the lines that contain this.
+
+METHOD:: text
+The whole log as text, oldest first, a line an entry.
+
+METHOD:: entries
+The entries, oldest first.
+
+METHOD:: since
+The entries from a time on.
+ARGUMENT:: time
+A time as code::Main.elapsedTime:: counts.
+
+METHOD:: size
+How many entries.
+
+METHOD:: clear
+Forget them.
+
+METHOD:: onAdd
+A function called with every entry as it is added.
+
+METHOD:: startedAt
+When the log was made.

@@ -1,0 +1,64 @@
+TITLE:: SPHealth
+summary:: what only shows over time: synths that pile up, outlive their kind, or are left paused
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPRouting
+
+DESCRIPTION::
+The problems of link::Classes/SPTree:: that one look at the tree can not find. Language only; SPTree calls link::#-check:: at every answer of the server.
+
+list::
+## strong::piling up:: - a SynthDef's count, sampled every link::#*sampleEvery:: seconds, has never gone down over at least five samples and has grown by six, and by a quarter.
+## strong::outlives its kind:: - the synths of a def that ended lived a few seconds at most, and one has been there link::#*outlives:: times as long (and link::#*outlivesAtLeast:: seconds).
+## strong::left paused:: - a synth paused for more than link::#*pausedFor:: seconds beside a running one of the same def, in the same group, on the same busses: released while asleep and never freed, as SuperDirt's sleeping effects are.
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+A new one, with no history.
+
+METHOD:: sampleEvery
+Seconds between two counts: 5.
+
+METHOD:: samples
+How many counts are kept: 12, a minute.
+
+METHOD:: pausedFor
+Seconds a synth is paused before it can be called left behind: 20.
+
+METHOD:: outlives
+How many times the usual life makes an outlier: 20.
+
+METHOD:: outlivesAtLeast
+And at least this many seconds: 30.
+
+METHOD:: signature
+A synth's busses as a list that two synths on the same busses share.
+ARGUMENT:: ios
+From link::Classes/SPRouting#*iosOf::.
+
+INSTANCEMETHODS::
+
+METHOD:: check
+Look at the tree now.
+ARGUMENT:: order
+The running synths, node Events, in tree order.
+ARGUMENT:: known
+What is known of each by id: an Event with code::born::.
+ARGUMENT:: history
+The ended synths: Events with code::def::, code::born::, code::ended::.
+ARGUMENT:: paused
+The paused synths: id -> since when.
+ARGUMENT:: ios
+Each synth's busses by id.
+ARGUMENT:: now
+The time; code::Main.elapsedTime:: when nil.
+RETURNS:: an Array of problems, Events code::(level:, kind:, id:, def:, text:, key:)::
+
+METHOD:: problems
+What the last link::#-check:: found.
+
+METHOD:: countsOf
+A def's counts, oldest first.
+ARGUMENT:: def
+A SynthDef's name.

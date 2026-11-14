@@ -1,0 +1,77 @@
+TITLE:: SPWatch
+summary:: a few controls and busses kept in view, each with its last moments
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPInspector
+
+DESCRIPTION::
+The values link::Classes/SPTree:: shows under its list: a control of a synth (the strong::w:: beside it in the inspector) or a bus (its strong::watch:: button). Each item keeps its last link::#*historySize:: values, drawn as a line. Language only: SPTree asks the server and puts the values in.
+
+code::
+w = SPWatch.new;
+w.add((kind: \bus, rate: \control, index: 3, name: "lfo"));
+w.put(w.items.first[\key], 0.5);
+w.items.first[\value];
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+An empty list.
+
+METHOD:: historySize
+How many values an item keeps: 150.
+
+METHOD:: keyOf
+An item's key.
+ARGUMENT:: what
+code::(kind: \control, id:, index:):: or code::(kind: \bus, rate:, index:)::.
+RETURNS:: a link::Classes/Symbol::
+
+METHOD:: labelOf
+An item in words.
+ARGUMENT:: item
+One of link::#-items::.
+
+INSTANCEMETHODS::
+
+METHOD:: add
+Watch something; answers the item it already had when it is watched.
+ARGUMENT:: what
+code::(kind: \control, id:, index:, name:, def:):: or code::(kind: \bus, rate:, index:, name:)::.
+
+METHOD:: remove
+Stop watching.
+ARGUMENT:: key
+An item's key.
+
+METHOD:: toggle
+Watch, or stop.
+ARGUMENT:: what
+As for link::#-add::.
+
+METHOD:: includes
+Whether it is watched.
+ARGUMENT:: what
+As for link::#-add::.
+
+METHOD:: put
+A value arrived for an item.
+ARGUMENT:: key
+The item's key.
+ARGUMENT:: value
+The value.
+
+METHOD:: items
+The items, in the order they were added.
+
+METHOD:: controls
+The watched controls.
+
+METHOD:: busses
+The watched busses.
+
+METHOD:: isEmpty
+Whether nothing is watched.
+
+METHOD:: size
+How many items.

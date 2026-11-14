@@ -1,0 +1,137 @@
+TITLE:: SPProbe
+summary:: the level on any set of busses, and a way to listen to one
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPRouting, Classes/SPMeter
+
+DESCRIPTION::
+What link::Classes/SPTree:: measures with. A probe reads audio bus channels at the tail of the root node - after everything that writes them in the block - and answers ten times a second with each one's peak and whether it carried a NaN, an inf or a denormal. Sixteen channels a synth (code::sp_probe16::), as many synths as the list needs and sixteen at most, so a stock server's 64 wire buffers are enough. Control busses are asked for with code::/c_get::.
+
+The probes and the listener are the observer's own synths: SPTree leaves them out of what it shows. Whoever makes a probe frees it.
+
+code::
+s.boot;
+(
+p = SPProbe(s);
+p.start;
+p.setBusses([0, 1], []);
+);
+p.level(0);          // nil until the first answer
+p.free;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+A probe on a server. Nothing runs until link::#-start::.
+ARGUMENT:: server
+A link::Classes/Server::.
+ARGUMENT:: action
+A function called after each batch of answers.
+
+METHOD:: slots
+Bus channels a probe synth: 16.
+
+METHOD:: maxSynths
+The most probe synths: 16, so 256 channels.
+
+METHOD:: replyRate
+Answers a second: 10.
+
+METHOD:: listenOut
+The first of the two busses link::#-listen:: plays on: 0.
+
+METHOD:: listenAmp
+How loud: 0.5.
+
+METHOD:: isOwn
+Whether a SynthDef is a probe's or the listener's.
+ARGUMENT:: def
+A SynthDef's name.
+
+METHOD:: probeDef
+The probe's link::Classes/SynthDef::.
+
+METHOD:: listenDef
+The listener's.
+ARGUMENT:: channels
+1 or 2.
+
+INSTANCEMETHODS::
+
+METHOD:: start
+Send the defs and begin. Needs a running server.
+
+METHOD:: stop
+Free the synths and stop answering.
+
+METHOD:: free
+Stop, and forget every level.
+
+METHOD:: restart
+After cmd + period or a reboot: the synths are gone, forget them.
+
+METHOD:: setBusses
+The bus channels to measure. More audio channels than fit are left out from the end: put first what matters.
+ARGUMENT:: audioIndices
+Audio bus channels.
+ARGUMENT:: controlIndices
+Control bus channels.
+
+METHOD:: audioBusses
+The audio channels measured.
+
+METHOD:: level
+A channel's peak, held and let fall; nil when it is not measured.
+ARGUMENT:: index
+An audio bus channel.
+
+METHOD:: raw
+The last answer's peak, not held.
+ARGUMENT:: index
+An audio bus channel.
+
+METHOD:: bad
+0 fine, 1 a NaN, 2 an inf, 3 denormals.
+ARGUMENT:: index
+An audio bus channel.
+
+METHOD:: kval
+A control bus's value, after link::#-poll::.
+ARGUMENT:: index
+A control bus channel.
+
+METHOD:: levelsCopy
+Every level now, by channel.
+
+METHOD:: poll
+Ask for the control busses' values.
+
+METHOD:: toTail
+Move the probes to the end of the root node again, so they read what was written this block.
+
+METHOD:: nodeIDs
+The ids of its synths.
+
+METHOD:: listen
+Play an audio bus on the outputs, beside whatever plays there. One at a time.
+ARGUMENT:: bus
+The first channel.
+ARGUMENT:: channels
+1 or 2.
+
+METHOD:: stopListening
+Stop it.
+
+METHOD:: listening
+code::[bus, channels]::, or nil.
+
+METHOD:: isListeningTo
+Whether that bus is being listened to.
+ARGUMENT:: bus
+The first channel.
+
+METHOD:: server
+Its server.
+
+METHOD:: action
+The function called after each batch of answers.

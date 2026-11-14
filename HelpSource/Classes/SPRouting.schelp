@@ -1,0 +1,146 @@
+TITLE:: SPRouting
+summary:: the node tree read as a signal flow: who writes and reads each bus, in the server's order
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPProbe, Classes/SynthDesc, Classes/In, Classes/InFeedback
+
+DESCRIPTION::
+From each synth's SynthDef (its code::In:: and code::Out:: UGens) and its control values, a model of the busses: for every bus channel the synths that write it and those that read it, in the order the server runs them. Language only: nothing here touches the server. link::Classes/SPTree:: builds one at every answer of the server and shows it as its busses view, its problems, and the path of a signal.
+
+The order rule it checks is the server's: code::In.ar:: hears a bus only if a synth earlier in the tree wrote it in the same block. A reader placed before its source hears silence; code::InFeedback:: hears the block before, wherever it is.
+
+What it can not know: a synth whose SynthDef this sclang has no link::Classes/SynthDesc:: of (the model's code::unknown:: counts them), a bus worked out inside the graph, a bus a control is mapped to.
+
+code::
+(
+SynthDef(\rt_src, { |out = 20| Out.ar(out, SinOsc.ar(300) * 0.1) }).add;
+SynthDef(\rt_fx, { |in = 20, out = 22| Out.ar(out, In.ar(in) * 0.5) }).add;
+// a tree as SPTree parses it: the effect before its source
+t = (id: 0, kind: \group, children: [
+	(id: 1001, kind: \synth, def: \rt_fx, controls: [[\in, 20], [\out, 22]]),
+	(id: 1002, kind: \synth, def: \rt_src, controls: [[\out, 20]])
+]);
+m = SPRouting.build(Server.default, t);
+SPRouting.problems(m).do { |p| p[\text].postln };
+SPRouting.ranges(m).do { |r| [r[\rate], r[\index], r[\w], r[\r]].postln };
+);
+::
+
+CLASSMETHODS::
+
+METHOD:: build
+The model of a tree.
+ARGUMENT:: server
+The link::Classes/Server:: (for which busses are hardware).
+ARGUMENT:: tree
+A node Event: code::id::, code::kind:: (code::\group:: or code::\synth::), code::children:: for a group, code::def:: and code::controls:: (code::[name, value]:: pairs) for a synth.
+ARGUMENT:: controlsOf
+A function of a synth's id answering its controls, for a node that has none.
+RETURNS:: an link::Classes/Event::: code::order:: (the synths, in the server's order), code::nodes:: and code::pos:: (by id), code::ios:: (each synth's busses), code::audio:: and code::control:: (per bus channel: code::writers:: and code::readers::, each code::(id:, type:)::), code::unknown::
+
+METHOD:: iosOf
+A synth's busses with their numbers.
+ARGUMENT:: def
+Its SynthDef's name.
+ARGUMENT:: controls
+Its controls, code::[name, value]:: pairs; the def's defaults stand in for what is missing.
+RETURNS:: an Array of Events code::(dir:, rate:, channels:, type:, bus:, via:)::, code::bus:: nil when it is not a plain number; nil without a SynthDesc
+
+METHOD:: templateOf
+A def's In and Out UGens, before any control value: code::start:: is a bus number, a control's name, or nil.
+ARGUMENT:: def
+A SynthDef's name.
+
+METHOD:: controlDict
+A synth's control values by name: the def's defaults, then what the server said.
+ARGUMENT:: def
+A SynthDef's name.
+ARGUMENT:: controls
+code::[name, value]:: pairs.
+
+METHOD:: buffersOf
+The buffers a synth's controls name: a control whose name says code::buf:: and whose value is a whole number.
+ARGUMENT:: def
+A SynthDef's name.
+ARGUMENT:: controls
+code::[name, value]:: pairs.
+RETURNS:: code::[[control, bufnum] ...]::
+
+METHOD:: ranges
+The busses as rows: neighbouring channels with the same writers and readers are one row.
+ARGUMENT:: model
+From link::#*build::.
+RETURNS:: an Array of Events code::(rate:, index:, channels:, kind:, writers:, readers:, w:, r:, name:)::, code::w:: and code::r:: the ids
+
+METHOD:: busKind
+code::\out:: (a hardware output), code::\in:: (a hardware input), code::\private:: or code::\control::.
+ARGUMENT:: server
+The link::Classes/Server::.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The bus index.
+
+METHOD:: problems
+What looks wrong in the order. A reader is early when a new source of its bus runs after it: a synth that writes the bus and is not itself downstream of it (link::#*downstreamOf::). It is a warning when nothing writes the bus before the reader, now or ever while code::fed:: was kept; else a note. A bus with only one end is a note.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: fed
+A link::Classes/Set:: the caller keeps between calls: which readers have ever had a writer before them.
+RETURNS:: an Array of Events code::(level:, kind:, id:, bus:, text:, key:)::
+
+METHOD:: downstreamOf
+The synths that are downstream of a bus channel: those that read it, and those that read what such a synth wrote. What they write back to the bus is the bus itself, processed - a mixer's send, effect, return and fader on one bus - not a new source.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: index
+An audio bus channel.
+RETURNS:: an link::Classes/IdentitySet:: of node ids
+
+METHOD:: pathFrom
+Where a signal goes: from a synth, or a bus, through every reader that hears it, to the hardware outputs.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: start
+code::(kind: \synth, id:):: or code::(kind: \bus, rate:, index:, channels:)::.
+ARGUMENT:: levels
+A function of a bus channel answering its level, or nil when nothing is measured.
+ARGUMENT:: paused
+The ids of the paused synths.
+RETURNS:: code::(rows:, verdicts:, truncated:)::. A row is a step: code::\synth::, code::\bus:: (with its level) or code::\note::, with its depth. A verdict is code::(ok:, text:)::: that it reaches an output, or the first place the sound stops
+
+METHOD:: feedsOf
+Who feeds a synth: for each bus it reads, the synths that write it where it can hear them.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: id
+A synth's node id.
+
+METHOD:: busText
+A bus in words: code::"audio 16-17 (orbit 0 dry)"::.
+ARGUMENT:: server
+The link::Classes/Server::.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The first channel.
+ARGUMENT:: channels
+How many.
+ARGUMENT:: name
+Its name, when already known.
+
+METHOD:: nodeText
+A node in words: code::"nt_src (1004)"::.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: id
+A node id.
+
+METHOD:: whoText
+Several nodes in words: one of a kind with its id, more as code::"nt_blip ×3"::.
+ARGUMENT:: model
+From link::#*build::.
+ARGUMENT:: ids
+Node ids.
+
+METHOD:: silence
+The amplitude under which a bus is silent: 0.0001 (-80 dB).

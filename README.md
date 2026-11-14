@@ -136,14 +136,37 @@ the root node, so it reads the outputs after everything.
 
 **SPTree** shows the node tree as an outline, one row per node, indented by
 depth. A group says what it is when that can be known: the root, the default
-group, an `Ndef`, SuperDirt and its orbits, an fx chain. It says how many
-synths are inside, and a click on its triangle folds it away. A synth shows its
-SynthDef in a colour of its own (one def, one colour), what it is at the right
-(an Ndef's synth, an orbit's effect, a synth of one SuperDirt event, a scope
-...), and with **controls** on, its controls. Nodes that have just appeared are
-lit for a second, so you can see what an event made. The filter keeps the
-synths whose def contains what you type; a double click traces a synth into the
-post window.
+group, an `Ndef`, SuperDirt and its orbits, an fx chain. A synth shows its
+SynthDef in a colour of its own (one def, one colour), what it is at the right,
+a light for what comes out of it and a red dot when something looks wrong.
+
+It is also the place to debug from. The menu at its top left changes what the
+list shows:
+
+| view | what it answers |
+|---|---|
+| **tree** | what is running, in the order the server runs it |
+| **busses** | who writes and who reads each bus, and how loud it is |
+| **problems** | a synth that reads a bus before it is written, synths that pile up, a paused synth left behind, a NaN on a bus, a FAILURE |
+| **signal path** | where a synth's sound goes, bus by bus, to the outputs - and where it stops |
+| **log** | every node that started or ended, with the time |
+| **ended** | the synths that have ended, still inspectable |
+| **buffers** | the buffers, and which synths read them |
+| **changes** | what is different since a snapshot |
+
+It stays readable while a pattern plays (**calm**, on by default): rows move at
+most every 0.7 s, what you are looking at stays where it is, and a group that
+makes many short-lived nodes shows them as one line. The strip under the top row
+is the last minute and a half: hold the window still (space) and click it, or
+press left and right, to step back. **snapshots** keeps a moment, compares two,
+writes one to disk. [docs/node-tree.md](docs/node-tree.md) has all of it.
+
+```supercollider
+SPTree(s).mode = \busses;
+SPTree(s).showPath(1001);                       // where that synth's sound goes
+SPTree(s).snapshot;                             // keep this moment
+SPTree(s).compare(SPTree(s).snapshots.first);   // what changed since
+```
 
 ### The inspector
 
@@ -156,9 +179,14 @@ does:
 - its controls with their values and defaults; type a value and return to set it (`/n_set`); a control mapped to a bus says which;
 - the busses it reads and writes, with names (BusManager's, SuperDirt's orbits, the hardware), from its SynthDef's `In` and `Out` UGens and the controls that feed them;
 - the UGens inside it;
-- buttons: **trace** (`/n_trace`, every UGen's inputs and outputs once, into the post window), **pause** / **run**, **free** (click twice), **scope out** (the bus it writes, in `SPScope`), **source** (the file it came from, when that is known), **copy** (a line of code that reaches it), **post** (all of this as text).
+- what looks wrong with it, in red, and the buffers its controls name;
+- buttons: **trace** (`/n_trace`, every UGen's inputs and outputs once, into the post window), **pause** / **run**, **free** (click twice), **path** (where its sound goes), **scope out** and **freq** (the bus it writes, in `SPScope` and `SPFreqScope`), **listen** (that bus on the outputs), **source** (the file it came from, when that is known), **copy** (a line of code that reaches it), **post** (all of this as text);
+- **w** beside a control keeps its value in view under the tree.
 
-**recent** lists the synths that have ended, newest first, and the inspector
+A bus (from the busses view or a path) shows its level, its writers and readers
+in the order they run, and the same buttons; a buffer its file and its readers.
+
+**ended** lists the synths that have ended, newest first, and the inspector
 still shows what was seen of them. A SuperDirt event's synths live a fraction of
 a second, shorter than the tree asks the server, so the tree asks for every new
 group's contents the moment it appears (`/n_go`): an event's synths are caught
@@ -200,10 +228,14 @@ SPTree.busNamers.addFirst({ |server, rate, index| if (rate == \audio and: { inde
 | [classes/SPWindow.sc](classes/SPWindow.sc) | `SPWindow`, what the four windows share: one per server, the top row, run and pause, the server hooks |
 | [classes/SPScopes.sc](classes/SPScopes.sc) | `SPScopeWindow`, and the two scopes on it: `SPScope`, `SPFreqScope` |
 | [classes/SPMeter.sc](classes/SPMeter.sc) | `SPMeter`, the level meters |
-| [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree, and what it knows: labellers, describers, bus names, history |
+| [classes/SPTree.sc](classes/SPTree.sc) | `SPTree`, the node tree and its views, and what it knows: labellers, describers, bus names, checkers, history |
+| [classes/SPRouting.sc](classes/SPRouting.sc) | `SPRouting`, the tree as busses: who writes and reads what, the order problems, the path of a signal |
+| [classes/SPProbe.sc](classes/SPProbe.sc) | `SPProbe`, the level on any set of busses, and a way to listen to one |
+| [classes/SPTreeTools.sc](classes/SPTreeTools.sc) | `SPLog`, `SPHealth`, `SPWatch`, `SPSnapshot`: the log, what only shows over time, watched values, the tree at one moment |
 | [classes/SPInspector.sc](classes/SPInspector.sc) | `SPInspector`, the panel at the right of the tree: everything about one node |
 | [classes/SystemOverwrites/extServer.sc](classes/SystemOverwrites/extServer.sc) | `s.scope`, `s.freqscope`, `s.meter`, `s.plotTree` opening the four windows, with the stock bodies for `replaceStockWindows = false` |
-| [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree`, `SPInspector` |
+| [HelpSource/Classes](HelpSource/Classes) | help for `ServerPanel`, `SPScope`, `SPFreqScope`, `SPMeter`, `SPTree`, `SPInspector`, `SPRouting`, `SPProbe`, `SPSnapshot`, `SPLog`, `SPHealth`, `SPWatch` |
+| [docs/node-tree.md](docs/node-tree.md) | debugging with the node tree: every view, the rules behind the problems, how it stays readable, what it can not know |
 | [Test/ServerPanel_unittest.scd](Test/ServerPanel_unittest.scd) | ServerView's unit test, renamed |
 | [install.scd](install.scd) | links a clone into the extensions folder, checks, unlinks |
 

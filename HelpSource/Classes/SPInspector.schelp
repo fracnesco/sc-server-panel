@@ -4,6 +4,8 @@ categories:: Libraries>ServerPanel
 related:: Classes/SPTree, Classes/SPScope, Classes/ServerPanel, Classes/SynthDesc
 
 DESCRIPTION::
+Beside nodes it shows a strong::bus:: (click one in the tree's busses view, or in a signal path): its level, what looks wrong with it, the synths that write it and those that read it in the order they run, each a button to that node, and strong::path::, strong::scope::, strong::freq::, strong::listen::, strong::watch::. And a strong::buffer::: its file and the synths that read it. For a synth it adds what looks wrong with it, the buffers its controls name, strong::path:: (where its sound goes), strong::freq:: and strong::listen:: on the bus it writes, and a strong::w:: beside each control to keep its value in view under the tree.
+
 The panel at the right of link::Classes/SPTree::. It is made by the tree; click a node there, running or under strong::recent::, and it shows:
 
 list::
@@ -102,6 +104,9 @@ The value.
 ARGUMENT:: server
 The link::Classes/Server::.
 
+METHOD:: descFinders
+A link::Classes/List:: of functions code::{ |defName| }:: answering a link::Classes/SynthDesc:: or nil, asked when the SynthDescLib does not have a def. Built in: JITLib - an Ndef's or a ProxySpace's proxy keeps the SynthDef of each of its synths, so their controls, busses and UGens are known too.
+
 METHOD:: valueString
 A value as the panel writes it.
 ARGUMENT:: v
@@ -152,3 +157,6 @@ ARGUMENT:: size
 Points.
 ARGUMENT:: bold
 Bold or not.
+
+METHOD:: levels
+The levels have moved: what shows one is written again, four times a second at most. link::Classes/SPTree:: calls it.

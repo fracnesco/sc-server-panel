@@ -1,0 +1,113 @@
+TITLE:: SPSnapshot
+summary:: the node tree at one moment, two of them compared, one written to disk
+categories:: Libraries>ServerPanel
+related:: Classes/SPTree, Classes/SPRouting
+
+DESCRIPTION::
+A snapshot is an link::Classes/Event::: the tree with every synth's controls, the names of its groups and synths, the busses with their writers, readers and levels, the problems, the paused synths, the time. link::Classes/SPTree#-snapshot:: makes them; this class compares two, writes one as text, and saves and loads them. Language only.
+
+code::
+s.boot;
+t = SPTree(s);
+t.snapshot;                               // made from the server's next answer
+x = { SinOsc.ar(300) * 0.05 }.play;
+t.snapshot;
+SPSnapshot.diff(t.snapshots[1], t.snapshots[0]).do { |c| [c[\kind], c[\text]].postln };
+SPSnapshot.text(t.snapshots[0]).postln;
+x.free;
+::
+
+CLASSMETHODS::
+
+METHOD:: make
+A snapshot of a tree. SPTree calls this.
+ARGUMENT:: server
+The link::Classes/Server::.
+ARGUMENT:: tree
+The root node Event.
+ARGUMENT:: labels
+Group names by id.
+ARGUMENT:: names
+What each synth is, by id.
+ARGUMENT:: model
+link::Classes/SPRouting::'s.
+ARGUMENT:: levels
+Bus levels by channel.
+ARGUMENT:: problems
+As SPTree lists them.
+ARGUMENT:: paused
+The ids of the paused synths.
+
+METHOD:: diff
+What changed from one snapshot to another: nodes added and removed (several synths of one def in one group are one line), nodes that moved, controls that changed, busses whose writers or readers are other SynthDefs or that went from sounding to silent, problems that came or went.
+ARGUMENT:: a
+The earlier snapshot.
+ARGUMENT:: b
+The later one.
+RETURNS:: an Array of Events code::(kind:, id:, text:)::, code::kind:: one of code::\added \removed \moved \control \bus \problem::
+
+METHOD:: text
+A snapshot as a page of text: the tree in the server's order with every control, the busses, the problems.
+ARGUMENT:: snap
+A snapshot.
+
+METHOD:: title
+One line: its time and how many nodes.
+ARGUMENT:: snap
+A snapshot.
+
+METHOD:: counts
+code::[groups, synths]::.
+ARGUMENT:: snap
+A snapshot.
+
+METHOD:: index
+Its nodes by id, and the ids in tree order.
+ARGUMENT:: snap
+A snapshot.
+RETURNS:: code::[an IdentityDictionary, an Array]::
+
+METHOD:: save
+Write a snapshot as code::tree-<stamp>.snapshot:: (an archive) and code::tree-<stamp>.txt::.
+ARGUMENT:: snap
+A snapshot.
+ARGUMENT:: dir
+A folder; link::#*folder:: when nil.
+RETURNS:: the archive's path
+
+METHOD:: load
+Read an archive back.
+ARGUMENT:: path
+A code::.snapshot:: file.
+
+METHOD:: files
+The archives in a folder, newest first.
+ARGUMENT:: dir
+A folder; link::#*folder:: when nil.
+
+METHOD:: folder
+Where snapshots and logs are written: code::server-panel-snapshots:: in the user support directory. Set it to write elsewhere.
+
+METHOD:: copyTree
+A node and everything under it, copied.
+ARGUMENT:: node
+A node Event.
+
+METHOD:: nameOf
+A node of a snapshot in words.
+ARGUMENT:: snap
+A snapshot.
+ARGUMENT:: node
+One of its nodes.
+
+METHOD:: pathText
+The groups above a node, by name.
+ARGUMENT:: snap
+A snapshot.
+ARGUMENT:: node
+One of its nodes.
+
+METHOD:: db
+A level in words.
+ARGUMENT:: amp
+An amplitude, or nil.

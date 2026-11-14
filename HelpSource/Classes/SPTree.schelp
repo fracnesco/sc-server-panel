@@ -1,30 +1,55 @@
 TITLE:: SPTree
-summary:: the server's node tree as an outline, with an inspector that says what each node is
+summary:: the server's node tree, its busses, what looks wrong, where a signal goes, what changed
 categories:: Libraries>ServerPanel
-related:: Classes/SPInspector, Classes/SPMeter, Classes/ServerPanel, Classes/Group, Classes/Node
+related:: Classes/SPInspector, Classes/SPRouting, Classes/SPProbe, Classes/SPSnapshot, Classes/SPLog, Classes/ServerPanel, Classes/Group
 
 DESCRIPTION::
-What code::s.plotTree:: shows, made legible. One row per node, indented by depth, with guides down the side.
+What code::s.plotTree:: shows, made legible, and a place to debug from. One row per node, indented by depth, with guides down the side.
 
 list::
 ## A strong::group:: says what it is when that can be known: the root, the default group, an code::Ndef::, SuperDirt and each of its orbits, a ParaEQ fx chain. Its row says how many synths are inside, folded or not. Click its triangle (or double click the row) to fold it away; strong::open all:: unfolds everything.
-## A strong::synth:: shows its SynthDef, with a dot in a colour of its own: the same def is always the same colour, so twenty of one kind read as one kind. At the right it says what the synth is, from link::#*describers:: (an Ndef's synth, an orbit's global effect, a synth of one SuperDirt event, a scope ...). A paused synth says so. With strong::controls:: on, the row carries its controls and their values.
-## A click on a node shows it in the strong::inspector:: at the right (link::Classes/SPInspector::): who made it, its controls (set them there), the busses it reads and writes, the UGens inside, and buttons to trace, pause, free, scope, open its source, copy code that reaches it. Up and down move the selection.
-## strong::recent:: lists the synths that have ended, newest first; click one to see what it was. A new group's contents are asked for the moment it appears (code::/n_go::), so the synths of a SuperDirt event, which live a fraction of a second, are caught even when they never reach the outline.
-## A node that has just appeared is lit in orange for a second, so what an event or a key press made shows.
-## The filter keeps the synths whose def, or groups whose name, contains what you type, with the groups they are in.
-## A double click on a synth traces it into the post window (code::/n_trace::).
+## A strong::synth:: shows a light (green when the busses it writes carry signal, red for a NaN or an inf), its SynthDef with a dot in a colour of its own (the same def is always the same colour), and at the right what it is, from link::#*describers::. A paused synth says so; a red dot at the right says something looks wrong with it. With strong::controls:: on, the row carries its controls and their values.
+## A click on a row shows what it is about in the strong::inspector:: at the right (link::Classes/SPInspector::): a node, a bus or a buffer. Up and down move the selection.
+## A node that has just appeared is lit in orange for a second.
+## The filter keeps the rows that contain what you type.
 ::
 
-It asks the server with code::/g_queryTree:: every half second (strong::every:: changes that). One per server; ServerPanel's code::p:: key opens it.
+subsection:: The views
+
+The menu at the top left (link::#-mode::) changes what the list shows.
+
+table::
+## strong::tree:: || the nodes, in the order the server runs them
+## strong::busses:: || every bus in use: who writes it, who reads it, its level. A double click follows its signal
+## strong::problems:: || what looks wrong: a synth that reads a bus before it is written (it hears silence), synths of a def that pile up, a synth that outlives its kind, a paused synth beside its running twin, a NaN on a bus, a FAILURE of the server. The button of that name is red, with a count, while there are any
+## strong::signal path:: || where the selected synth's sound goes, bus by bus with levels, to the outputs - and where it stops (link::#-showPath::)
+## strong::log:: || every node that started, ended, was paused or resumed, with the time (link::Classes/SPLog::)
+## strong::ended:: || the synths that have ended, newest first; click one to see what it was
+## strong::buffers:: || the buffers this sclang made, and which synths read them
+## strong::changes:: || what is different since a snapshot (link::#-compare::)
+::
+
+The rules behind the problems, and what each view can not know, are in the repository's code::docs/node-tree.md::.
+
+subsection:: Readable while things change fast
+
+With link::#-calm:: on (the default) the list is laid out - rows added, removed, moved - at most once every link::#*calmTime:: seconds, whatever the server does; what is at the top of the view stays there; a group that makes link::#*busyRate:: or more nodes a second shows its short-lived children as one line (click it to have them one by one); a node that ended keeps its row, dimmed, until the next layout; and numbers are written again twice a second at most. A synth that lives a fraction of a second is still caught: a new group's contents are asked for the moment it appears (code::/n_go::), and a new synth's group is asked for, so both are in the log and under strong::ended::.
+
+subsection:: Stepping back
+
+The strip under the top row is the last link::#*rewind:: seconds: nodes that started (up) and ended (down) each half second, an orange tick for a problem, a red one for a FAILURE, a white line for a snapshot. Every answer of the server is kept that long. Hold the window still (space) and click the strip to see that moment; left and right step one answer; strong::run:: goes back to now.
+
+strong::snapshots:: keeps the whole tree at one moment (link::#-snapshot::), shows one again, compares, and writes one to disk (link::Classes/SPSnapshot::).
+
+It asks the server with code::/g_queryTree:: every half second (strong::every:: changes that). One per server; ServerPanel's code::p:: key opens it, and so does code::s.plotTree::.
 
 code::
 s.boot;
 SPTree(s);
-SPTree(s).showControls = true;
+SPTree(s).mode = \busses;
 SPTree(s).filter = "dirt";
-SPTree(s).interval = 0.25;
 SPTree(s).inspect(s.defaultGroup.nodeID);
+SPTree(s).snapshot;
 ::
 
 subsection:: Names of your own
@@ -79,6 +104,37 @@ ARGUMENT:: index
 The bus index.
 RETURNS:: a link::Classes/String::, or nil
 
+METHOD:: checkers
+A link::Classes/List:: of functions code::{ |server, model| }:: answering an Array of problems only a system of yours knows to look for. code::model:: is link::Classes/SPRouting::'s. A problem is an Event: code::level:: (code::\warn:: or code::\info::), code::text::, code::key:: (a String that stays the same while the problem does), and code::id:: (a node) or code::bus:: (code::[rate, index]::) to say what it is about. An error in one is ignored.
+
+METHOD:: modes
+The views, as Symbols: code::\tree \busses \problems \path \log \recent \buffers \diff::.
+
+METHOD:: modeNames
+What the menu calls them.
+
+METHOD:: calmTime
+With link::#-calm:: on, the least time between two layouts of the list, in seconds: 0.7.
+
+METHOD:: busyRate
+How many new nodes a second in one group make it show them as one line: 2.
+
+METHOD:: rewind
+How many seconds of the server's answers are kept to step back through: 90.
+
+METHOD:: busKey
+The key of a bus's row.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The bus index.
+RETURNS:: a link::Classes/Symbol::
+
+METHOD:: dbText
+A level in words: code::"-14 dB"::, code::"silent"::.
+ARGUMENT:: amp
+An amplitude.
+
 METHOD:: dirts
 A link::Classes/List:: of SuperDirt instances the tree should know. code::SuperDirt.start:: sets no code::SuperDirt.default::, so beside that and code::~dirt:: the tree looks here; SuperDirtGUI puts its own in.
 
@@ -111,7 +167,195 @@ METHOD:: filter
 Only the synths whose def contains this, and the groups they are in; an empty string shows everything.
 
 METHOD:: mode
-code::\tree::, the nodes running now, or code::\recent::, the synths that have ended.
+What the list shows, one of link::#*modes::.
+
+METHOD:: calm
+Whether the list is kept readable while the server changes fast (see above). True by default.
+
+METHOD:: running
+Whether it follows the server. Held still, it shows the last answer, or the moment chosen in the strip; setting it true goes back to now.
+
+METHOD:: selectBus
+Show a bus in the inspector: its level, who writes it and who reads it.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+A bus index; a channel of a stereo pair selects the pair.
+ARGUMENT:: channels
+How many, when the bus is in no row.
+
+METHOD:: selBus
+The selected bus as code::[rate, index, channels]::, or nil.
+
+METHOD:: selectBuffer
+Show a buffer in the inspector.
+ARGUMENT:: bufnum
+The buffer's number.
+
+METHOD:: selBuffer
+The selected buffer's number, or nil.
+
+METHOD:: showPath
+The signal path view, from a synth or a bus; with nothing given, from what is selected.
+ARGUMENT:: what
+A synth's node id, or a bus as code::[rate, index, channels]::.
+
+METHOD:: pathRoot
+What the path starts from: code::(kind: \synth, id:):: or code::(kind: \bus, rate:, index:, channels:)::.
+
+METHOD:: model
+The tree as busses, from link::Classes/SPRouting#*build::, made again at every answer of the server.
+
+METHOD:: problems
+What looks wrong now: an Array of Events (code::level::, code::kind::, code::id::, code::bus::, code::text::, code::key::).
+
+METHOD:: problemsOf
+The problems about one node.
+ARGUMENT:: id
+A node id.
+
+METHOD:: problemsOfBus
+The problems about a bus.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The first channel.
+ARGUMENT:: channels
+How many.
+
+METHOD:: levelOf
+A bus channel's peak now (or at the moment looked at); nil when it is not measured.
+ARGUMENT:: index
+An audio bus channel.
+
+METHOD:: levelOver
+The highest of link::#-levelOf:: over a run of channels.
+ARGUMENT:: index
+The first channel.
+ARGUMENT:: channels
+How many.
+
+METHOD:: outLevel
+What a synth puts out: the highest level on the busses it writes. Nil when they are not known.
+ARGUMENT:: id
+A synth's node id.
+
+METHOD:: isBad
+Whether a bus the synth writes carries a NaN, an inf or denormals.
+ARGUMENT:: id
+A synth's node id.
+
+METHOD:: iosOf
+A synth's busses, as link::Classes/SPRouting#*iosOf:: answers them.
+ARGUMENT:: id
+A synth's node id.
+
+METHOD:: pausedIds
+The ids of the synths known to be paused.
+
+METHOD:: steadyDb
+A level as text that holds still long enough to be read: written again twice a second at most.
+ARGUMENT:: key
+Whose level it is, a Symbol.
+ARGUMENT:: amp
+The level.
+
+METHOD:: probe
+The link::Classes/SPProbe:: that measures the busses.
+
+METHOD:: log
+The link::Classes/SPLog::.
+
+METHOD:: health
+The link::Classes/SPHealth:: that finds what only shows over time.
+
+METHOD:: watch
+The link::Classes/SPWatch:: of watched values.
+
+METHOD:: watchToggle
+Keep a value in view under the list, or stop.
+ARGUMENT:: what
+code::(kind: \control, id:, index:, name:, def:):: or code::(kind: \bus, rate:, index:, name:)::.
+
+METHOD:: isWatched
+Whether that value is watched.
+ARGUMENT:: what
+As for link::#-watchToggle::.
+
+METHOD:: listen
+Play an audio bus on the outputs (link::Classes/SPProbe#*listenOut::), beside what plays there; again on the same bus stops it.
+ARGUMENT:: bus
+The first channel.
+ARGUMENT:: channels
+One or two.
+
+METHOD:: isListeningTo
+Whether that bus is being listened to.
+ARGUMENT:: bus
+The first channel.
+
+METHOD:: snapshot
+Keep the tree as it is now: every node with its controls, the busses and their levels, the problems. While it runs, the snapshot is made from the server's next answer; it is then the first of link::#-snapshots::.
+
+METHOD:: snapshots
+The snapshots taken, newest first, twelve at most. Each is an Event (link::Classes/SPSnapshot::).
+
+METHOD:: showSnapshot
+Look at a snapshot: the tree as it was, held still.
+ARGUMENT:: snap
+One of link::#-snapshots::.
+
+METHOD:: compare
+The changes view: what is different from one snapshot to another.
+ARGUMENT:: from
+A snapshot.
+ARGUMENT:: to
+Another, or nil for the tree as it is now.
+
+METHOD:: diffFrom
+The snapshot the changes view starts from.
+
+METHOD:: diffTo
+The one it ends at; nil is now.
+
+METHOD:: saveSnapshot
+Write a snapshot to link::Classes/SPSnapshot#*folder::, as an archive and as text.
+ARGUMENT:: snap
+A snapshot; the newest when nil.
+RETURNS:: the archive's path
+
+METHOD:: saveLog
+Write the log to link::Classes/SPSnapshot#*folder:: as text.
+RETURNS:: the file's path
+
+METHOD:: stepFrame
+Held still, step through the answers kept.
+ARGUMENT:: by
+-1 back, 1 forward.
+
+METHOD:: viewing
+The moment looked at while held still (an Event with code::time::, code::tree::, code::levels::), or nil.
+
+METHOD:: busRecord
+A bus as the inspector shows it.
+ARGUMENT:: rate
+code::\audio:: or code::\control::.
+ARGUMENT:: index
+The first channel.
+ARGUMENT:: channels
+How many.
+RETURNS:: an link::Classes/Event::
+
+METHOD:: bufferRecord
+A buffer as the inspector shows it.
+ARGUMENT:: bufnum
+The buffer's number.
+RETURNS:: an link::Classes/Event::
+
+METHOD:: bufferText
+A buffer in words: SuperDirt's name, its file, its length, its channels.
+ARGUMENT:: bufnum
+The buffer's number.
 
 METHOD:: showInspector
 Whether the inspector is shown at the right.
