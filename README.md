@@ -5,9 +5,10 @@
 The window the server opens on boot: CPU and node counters with their history,
 a RAM bar (the server's samples, the rest of scsynth, other programs, what is free),
 input and output meters around a small scope, a peak history, the volume and a
-recorder row, in one dark palette. The `s`, `f`, `l` and `p` keys open a scope,
-a frequency scope, level meters and the node tree in the same colours, each
-with a line along the bottom that reads out what is under the pointer.
+recorder row, in one dark palette, with a hint bar along the bottom that says
+what the pointer is over. The `s`, `f`, `l`, `p` and `o` keys open a scope, a
+frequency scope, level meters, the node tree and the server's options in the
+same colours.
 
 ```supercollider
 s.boot;              // the panel opens by itself
@@ -16,6 +17,7 @@ SPScope(s);          // the oscilloscope
 SPFreqScope(s);      // the spectrum
 SPMeter(s);          // every input and output
 SPTree(s);           // what is running on the server
+SPOptions(s);        // the server's options
 ```
 
 ![the panel](ui-shots/panel.png)
@@ -41,11 +43,12 @@ What the fork adds:
 
 - one dark palette and one way of drawing every window: a row of controls on
   top, a hint bar along the bottom that says what the pointer is over, space to
-  run and pause, escape to close (`SPWindow`);
+  run and pause, escape to close (`SPWindow`); the panel has the same hint bar,
+  and an **on top** box;
 - a RAM bar: the server's samples, the rest of scsynth, other programs, what is free;
 - four windows that replace the stock ones, from `s.scope`, `s.freqscope`,
   `s.meter`, `s.plotTree` and the IDE's Server menu: `SPScope`, `SPFreqScope`,
-  `SPMeter`, `SPTree`;
+  `SPMeter`, `SPTree`; the meters on a mixing desk's scale, with a VU's rms;
 - the node tree as a debugger: busses, problems, the path of a signal, a log,
   snapshots, an inspector for any node (`SPTree`, `SPInspector`, `SPRouting`,
   `SPProbe`, `SPLog`, `SPHealth`, `SPWatch`, `SPSnapshot`);
@@ -61,7 +64,7 @@ made, and a tool that is not installed is a button that is not there.
 |---|---|
 | [FxKit](https://github.com/fracnesco/sc-fx-kit) (`FxChain`) | the `fx` row: a chain of effects on the main out, with its own window. See [the master fx](#the-master-fx) |
 | [Compressor](https://github.com/fracnesco/sc-compressor) | put in that chain after the eq |
-| [ParaEQ](https://github.com/fracnesco/sc-eq) | put in that chain first |
+| [ParaEQ](https://github.com/fracnesco/sc-EQ) | put in that chain first |
 | the effects built on FxKit | the chain's **+ effect** menu |
 | [Insight](https://github.com/fracnesco/supercollider-insight-meter) | the `i` button by the meters: spectrum, loudness and image of the main out |
 | [BusRecorder](https://github.com/fracnesco/sc-recorder) | the `r` button in the record row |
@@ -112,7 +115,7 @@ error at compile time.
 ### Check that it took
 
 ```supercollider
-[\ServerPanel, \SPScope, \SPFreqScope, \SPMeter, \SPTree].every { |c| c.asClass.notNil };   // -> true
+[\ServerPanel, \SPScope, \SPFreqScope, \SPMeter, \SPTree, \SPOptions].every { |c| c.asClass.notNil };   // -> true
 ```
 
 ## The panel
@@ -147,7 +150,7 @@ ServerPanel.onTop = true;
 
 The `fx` button opens a chain of effects on the main out (`FxChain.master`,
 from [FxKit](https://github.com/fracnesco/sc-fx-kit)): an eq if
-[ParaEQ](https://github.com/fracnesco/sc-eq) is installed, and a compressor if
+[ParaEQ](https://github.com/fracnesco/sc-EQ) is installed, and a compressor if
 [Compressor](https://github.com/fracnesco/sc-compressor) is installed, both off
 until you switch them on. The line beside the button says what is in the chain
 and what is on, whether its window is open or not. The chain runs after the
@@ -353,6 +356,8 @@ setting you change is lit and waits: **apply** sets the changes, **apply and
 reboot** reboots too when a change needs it, **revert** forgets them. The top
 row says how many are waiting and whether they need a reboot; the hint bar says
 what each setting does. Latency and the recording settings take effect at once.
+
+![SPOptions, with more unfolded](ui-shots/options-more.png)
 
 ```supercollider
 SPOptions(s);
