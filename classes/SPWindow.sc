@@ -31,6 +31,7 @@ SPWindow {
 		|bool|
 		showHints = bool.booleanValue;
 		{ all.do { |w| w.prSyncHints } }.defer;
+		ServerPanel.prSyncHintsAll;
 	}
 
 	// one window per server and kind: asking again brings the open one to the front

@@ -7,6 +7,20 @@ ServerPanel : Singleton {
 	// stock ones (false). See extServer.sc.
 	classvar <>replaceStockWindows = true;
 	var <>view, <window, widgetLayout, server, <>widgets, containers;
+	var hintBar, hintText = "", hinted, lastLookup = 0, onTopBox, hintBox;
+
+	// whether the panel stays in front of every other window; kept between sessions
+	*onTop { ^(Archive.global.at(\ServerPanel, \onTop) ? false) }
+	*onTop_ {
+		|bool|
+		Archive.global.put(\ServerPanel, \onTop, bool.booleanValue);
+		{ this.all.do { |p| p.prSyncTop } }.defer;
+	}
+
+	// SPWindow.showHints changed: every panel follows
+	*prSyncHintsAll { { this.all.do { |p| p.prSyncTop } }.defer }
+
+	defaultHint { ^"b boot · s scope · f freq · l levels · p tree · o options · x fx" }
 
 	*initClass {
 		panelTypes = IdentityDictionary();
@@ -65,6 +79,7 @@ ServerPanel : Singleton {
 	}
 
 	createView {
+		var column;
 		window = Window("server", Rect(0, 0, 265, 200), resizable:true, border:border);
 		window.autoRememberPosition(\ServerPanel);
 		view = window.view.minWidth_(265).minHeight_(200);
@@ -79,14 +94,40 @@ ServerPanel : Singleton {
 			|v, char|
 			actions[char.asSymbol].value(this);
 		});
+
+		// the top row: keep the panel in front, fold the hint bar away
+		onTopBox = CheckBox().string_("on top").font_(SPWidgetBase.font(9)).canFocus_(false)
+			.value_(this.class.onTop).action_({ |b| this.class.onTop = b.value });
+		hintBox = CheckBox().string_("hints").font_(SPWidgetBase.font(9)).canFocus_(false)
+			.value_(SPWindow.showHints).action_({ |b| SPWindow.showHints = b.value });
+
+		// the hint bar, as in every window of the family: drawn, two lines
+		// high, so the panel's narrow width wraps a hint rather than cutting it
+		hintBar = UserView().fixedHeight_(28).minWidth_(10).background_(SPWidgetBase.colOff)
+			.drawFunc_({ |v|
+				var str = hintText, idle = str.isEmpty;
+				if (idle) { str = this.defaultHint };
+				Pen.stringInRect(str, Rect(6, 2, v.bounds.width - 12, v.bounds.height - 4),
+					SPWidgetBase.font(9), if (idle) { SPWidgetBase.colDim } { SPWidgetBase.colText });
+			});
+		window.acceptsMouseOver = true;
+		view.mouseOverAction_({ |top, x, y| this.prHintAt(top, x, y); nil });
+		view.mouseLeaveAction_({ this.prSay("") });
+
+		widgetLayout = VLayout();
+		column = VLayout(
+			HLayout(nil, onTopBox, hintBox).margins_(0).spacing_(8),
+			widgetLayout,
+			hintBar
+		).spacing_(4).margins_(0);
 		if (border.not) {
 			view.layout_(HLayout(
 				WindowHandleView().maxWidth_(10).minWidth_(10),
-				widgetLayout = VLayout()
+				column
 			).spacing_(0).margins_(6));
 		}{
 			view.layout_(HLayout(
-				widgetLayout = VLayout()
+				column
 			).spacing_(0).margins_(6));
 		};
 
@@ -94,9 +135,60 @@ ServerPanel : Singleton {
 		widgetLayout.spacing = 1;
 		view.onClose_(this.onClose(_));
 		this.populateView();
+		this.prSyncTop;
+	}
+
+	// ---------------------------------------------------------- the hint bar
+
+	// Give a view its hint: a String, or a Function answering one. The bar
+	// says it while the pointer is over the view. A button hears no move
+	// without a press, so the window also looks up what is under the pointer.
+	hintAttach {
+		|v, hint|
+		if (v.isNil or: { hint.isNil }) { ^v };
+		v.toolTip = nil;
+		v.acceptsMouseOver = true;
+		v.addAction({ this.prSay(hint.value); nil }, \mouseEnterAction);
+		hinted = hinted.add([v, hint]);
+		^v
+	}
+
+	prHintAt {
+		|top, x, y|
+		var p, best, bestArea, origin, now = Main.elapsedTime;
+		if ((now - lastLookup) < 0.03) { ^this };
+		lastLookup = now;
+		origin = try { top.absoluteBounds.origin } ? Point(0, 0);
+		p = Point(x, y) + origin;
+		hinted = (hinted ? []).reject { |pair| pair[0].isClosed };
+		hinted.do { |pair|
+			var r = try { pair[0].absoluteBounds };
+			if (r.notNil and: { r.containsPoint(p) } and: { try { pair[0].visible } ? false }) {
+				if (bestArea.isNil or: { (r.width * r.height) < bestArea }) { best = pair; bestArea = r.width * r.height };
+			};
+		};
+		this.prSay(best !? { best[1].value } ? "");
+	}
+
+	prSay {
+		|str|
+		str = str ? "";
+		if (str == hintText) { ^this };
+		hintText = str;
+		if (hintBar.notNil and: { hintBar.isClosed.not }) { hintBar.refresh };
+	}
+
+	// the on top and hints boxes, and the window, as the class says
+	prSyncTop {
+		if (window.isNil or: { window.isClosed }) { ^this };
+		if (window.alwaysOnTop != this.class.onTop) { window.alwaysOnTop = this.class.onTop };
+		onTopBox.value = this.class.onTop;
+		hintBox.value = SPWindow.showHints;
+		hintBar.visible = SPWindow.showHints;
 	}
 
 	populateView {
+		hinted = [];
 		containers = List();
 		widgets = List();
 
@@ -133,7 +225,7 @@ ServerPanel : Singleton {
 
 	onClose {
 		|v|
-		window = widgetLayout = view = nil;
+		window = widgetLayout = view = hintBar = nil;
 		actions.clear;
 	}
 
@@ -296,6 +388,11 @@ SPWidgetBase {
 
 	actions { ^[] }
 
+	*font { |size = 11, bold = false| ^Font(Font.defaultSansFace, size, bold) }
+
+	// say what a view is in the panel's hint bar
+	hint { |v, str| ^parent.tryPerform(\hintAttach, v, str) ? v }
+
 	view { this.subclassResponsibility('view') }
 }
 
@@ -446,7 +543,7 @@ SPSelectorWidget : SPWidgetBase {
 					.canFocus_(false)
 					.fixedHeight_(24)
 					.minWidth_(120)
-					.toolTip_("the server this window shows - click for the others");
+					.spHint(this, "the server this window shows - click for the others");
 
 		onServersChanged = {
 			|what, obj, server|
@@ -505,7 +602,7 @@ SPSelectorWidget : SPWidgetBase {
 					.states_([[nil, Color.clear, colPanel]])
 					.canFocus_(false)
 					.iconSize_(16)
-					.toolTip_("everything the window can do, with its keys");
+					.spHint(this, "everything the window can do, with its keys");
 
 		if (\Material.asClass.notNil) {
 			button.icon_(Material("settings", 18, color: colDim))
@@ -570,7 +667,7 @@ SPSelectorWidget : SPWidgetBase {
 					.action_(this.defaultAction(_))
 					.fixedSize_(22@20)
 					.canFocus_(false)
-					.toolTip_("make this the default server")
+					.spHint(this, "make this the default server")
 				),
 				nil,
 				optionsMenu
@@ -635,6 +732,14 @@ SPStatusWidget : SPWidgetBase {
 		counterViews = List();
 		trackedCounts.do({|c|
 			counters[c].view.background_(colOff);
+			this.hint(counters[c].view, (
+				numSynths: "synths running now, with their history",
+				numGroups: "groups on the server",
+				avgCPU: "the server's average cpu load: red when it is high",
+				numUGens: "UGens running now, in every synth",
+				numSynthDefs: "SynthDefs loaded on the server",
+				peakCPU: "the server's peak cpu load: when it nears 100 the audio drops out"
+			)[c]);
 			counterViews.add([ counters[c].view, columns:counters[c].span ]);
 			(counters[c].span - 1).do { counterViews.add(nil) }
 		});
@@ -824,7 +929,7 @@ SPMemoryWidget : SPWidgetBase {
 			.drawFunc_({ |v| this.prDraw(v) });
 		readout = StaticText().font_(this.smallFont).stringColor_(colDim).align_(\center);
 		view = View().layout_(VLayout(bar, readout).margins_(0).spacing_(2))
-			.toolTip_("RAM: samples (every Buffer on the server), the rest of scsynth, other programs, available");
+			.spHint(this, "RAM: samples (every Buffer on the server), the rest of scsynth, other programs, available");
 		skip = SkipJack({ this.update }, interval, { view.isNil or: { view.isClosed } }, "SPMemoryWidget");
 		view.onClose_({ skip.stop });
 		this.update;
@@ -966,7 +1071,7 @@ SPVolumeWidget : SPWidgetBase {
 					.fixedHeight_(height)
 					.thumbSize_(height - 5)
 					.value_(volSpec.unmap(server.volume.volume))
-					.toolTip_("the server's volume, in dB")
+					.spHint(this, "the server's volume, in dB")
 				),
 				volumeNum = (NumberBox()
 					.action_({ |v| server.volume_(v.value.round(0.1)) })
@@ -974,6 +1079,7 @@ SPVolumeWidget : SPWidgetBase {
 					.fixedWidth_(48)
 					.fixedHeight_(height)
 					.value_(server.volume.volume)
+					.spHint(this, "the server's volume in dB - type a value and return")
 				),
 				muteButton = (Button()
 					.action_({ |v| (v.value == 1).if({ server.mute }, {server.unmute}) })
@@ -985,6 +1091,7 @@ SPVolumeWidget : SPWidgetBase {
 						["muted", Color.white, colClip]
 					])
 					.value_(server.volume.isMuted.binaryValue)
+					.spHint(this, "mute the server's outputs (m); 0 puts the volume back to 0 dB")
 				)
 			).margins_(0).spacing_(4)
 		);
@@ -1071,7 +1178,7 @@ SPRecordWidget : SPWidgetBase {
 			.stringColor_(colDim)
 			.background_(colPanel)
 			.fixedHeight_(20)
-			.toolTip_("where the file goes - click to open the folder, drop a folder here to change it")
+			.spHint(this, "where the file goes - click to open the folder, drop a folder here to change it")
 		);
 		pathString.mouseUpAction = {
 			// openOS is the platform's own: open on macOS, start on Windows, xdg-open on Linux
@@ -1088,7 +1195,7 @@ SPRecordWidget : SPWidgetBase {
 			.align_(\right)
 			.fixedWidth_(20)
 			.fixedHeight_(20)
-			.toolTip_("the first bus to record")
+			.spHint(this, "the first bus to record")
 		);
 		busInput.value = 0;
 
@@ -1104,7 +1211,7 @@ SPRecordWidget : SPWidgetBase {
 			.align_(\right)
 			.fixedWidth_(20)
 			.fixedHeight_(20)
-			.toolTip_("how many channels")
+			.spHint(this, "how many channels")
 		);
 		channelsInput.value = server.options.numOutputBusChannels;
 
@@ -1115,13 +1222,14 @@ SPRecordWidget : SPWidgetBase {
 			.background_(Color.clear)
 			.fixedWidth_(52)
 			.fixedHeight_(20)
+			.spHint(this, "how long the recording has run")
 		);
 
 		recButton = Button()
 						.states_([[nil, Color.clear, colPanel]])
 						.fixedSize_(20@20)
 						.canFocus_(false)
-						.toolTip_("record these buses to a file in that folder");
+						.spHint(this, "record these buses to a file in that folder");
 		recButton.icon = recIcon;
 
 		recButton.mouseUpAction = this.buttonClicked(_);
@@ -1139,7 +1247,7 @@ SPRecordWidget : SPWidgetBase {
 					.font_(this.font(9, true))
 					.canFocus_(false)
 					.states_([["r", colText, colPanel]])
-					.toolTip_("Recorder: record any set of buses to disk, and a window to do it from")
+					.spHint(this, "Recorder: record any set of buses to disk, and a window to do it from")
 					.action_({ SPWidgetBase.openRecorder })
 			);
 		};
@@ -1203,7 +1311,7 @@ SPMasterFxWidget : SPWidgetBase {
 			.canFocus_(false)
 			.font_(this.font(10, true))
 			.states_([["fx", colText, colPanel], ["fx", Color.black, colAccent]])
-			.toolTip_("the effects on the main out: an eq and a compressor - click for their window, again to close it")
+			.spHint(this, "the effects on the main out: an eq and a compressor - click for their window, again to close it")
 			.action_({ |b| this.toggle(b.value == 1) });
 		statusText = StaticText().font_(this.smallFont).stringColor_(colDim);
 
@@ -1528,7 +1636,7 @@ SPScopeWidget : SPWidgetBase {
 						.font_(this.font(9, true))
 						.canFocus_(false)
 						.states_([["i", colText, colPanel]])
-						.toolTip_("Insight: spectrum, loudness and image of the main out")
+						.spHint(this, "Insight: spectrum, loudness and image of the main out")
 						.action_({ SPWidgetBase.openInsight(server) }),
 					nil
 				).margins_(0).spacing_(0))
@@ -1539,6 +1647,9 @@ SPScopeWidget : SPWidgetBase {
 
 		this.initPrefs();
 
+		this.hint(scopeView, "the main out as a scope, after the volume and the fx - the wheel zooms; s opens a bigger one");
+		this.hint(inMetersView, "the inputs: rms and peak");
+		this.hint(outMetersView, "the outputs, after everything: rms and peak - l opens the level meters");
 		scopeView.server = server;
 		scopeView.canFocus = true;
 		scopeView.background = colOff;
@@ -1754,6 +1865,7 @@ SPHistoryWidget : SPWidgetBase {
 		counter = SPGraphCounter("peak", nil, this.smallFont, colGood, 0.0, 1.0, historySize:160);
 		view = counter.view;
 		view.background_(colOff);
+		this.hint(view, "the peak of the main out over the last seconds");
 		view.minHeight_(40);
 
 		if (server.serverBooting.not && server.serverRunning) {
@@ -1767,4 +1879,10 @@ SPHistoryWidget : SPWidgetBase {
 
 		^view
 	}
+}
+
+// extensions come after every class of the file, or the file does not parse
++ View {
+	// a hint in ServerPanel's bar, in a chain of setters: Button().spHint(widget, "...")
+	spHint { |widget, str| widget.hint(this, str) }
 }
