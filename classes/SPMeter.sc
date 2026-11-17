@@ -2,10 +2,13 @@
 // SPMeter - the server's level meters, in ServerPanel's colours
 //
 // What `s.meter` opens, made again: every input and output as a bar with
-// its rms as the body and its peak as a line, a peak hold, a clip light
-// that stays on until you click, the held peak in dB under each bar, and
-// one dB scale beside them all. Point at a bar and the line along the bottom reads out
-// its peak and rms.
+// its rms as the body over a dim column for its peak, the peak as a line,
+// a peak hold, a clip light that stays on until you click, the held peak
+// in dB under each bar, and one dB scale beside them all. The scale is the
+// IEC 60268-18 one, so the top 20 dB, where mixing happens, take half the
+// height; the rms is averaged over 300 ms, as a VU reads. The bars share
+// the window's width, and stay centred when they reach their widest.
+// Point at a bar and the line along the bottom reads out its peak and rms.
 //
 //   SPMeter(s);
 //   SPMeter(s).dbLow = -80;        // the bottom of the scale
@@ -18,7 +21,7 @@
 // =====================================================================
 
 SPMeter : SPWindow {
-	classvar <replyRate = 20, <maxChannels = 32, idCounter = 0;
+	classvar <replyRate = 30, <>rmsTime = 0.3, <maxChannels = 32, idCounter = 0;
 	classvar <dbRanges = #[-48, -60, -80, -96], <holdTimes = #[1, 3, inf];
 
 	var <dbLow = -60, <holdTime = 3;
@@ -26,10 +29,13 @@ SPMeter : SPWindow {
 	var barW = 12, slot = 16;		// worked out from the view's width at each draw
 	var rangeMenu, holdMenu;
 
+	var left = 0;					// where the scale starts: the scale and bars are centred
+	var lastReply = 0;
+
 	// a bar is as wide as the view allows, within these, gap apart, in a
 	// column after the scale
-	*minBarW { ^10 }
-	*maxBarW { ^56 }
+	*minBarW { ^6 }
+	*maxBarW { ^72 }
 	*gap { ^4 }
 	*scaleW { ^30 }
 	*groupGap { ^16 }
@@ -40,8 +46,8 @@ SPMeter : SPWindow {
 	defaultHint { ^"point at a bar for its peak and rms  ·  click the meters to let go of the held peaks and the clip lights  ·  space runs and pauses" }
 
 	defaultSize {
-		var w = this.class.scaleW + 16 + (this.prBarCount * 22) + this.prGroupGap;
-		^Point(w.clip(300, 1200), 300)
+		var w = this.class.scaleW + 16 + (this.prBarCount * 40) + this.prGroupGap;
+		^Point(w.clip(360, 1200), 360)
 	}
 
 	runHint { ^"run or pause the meters (space)" }
@@ -60,17 +66,20 @@ SPMeter : SPWindow {
 
 	prGroupGap { ^if (numIns > 0 and: { numOuts > 0 }) { this.class.groupGap } { 0 } }
 
-	// the bars share the width: each gets a slot, a bar and a gap
+	// the bars share the width: each gets a slot, a bar and a gap; past
+	// their widest, the scale and the bars sit in the middle
 	prLayout {
 		|w|
-		var avail = w - this.class.scaleW - 12 - this.prGroupGap;
+		var avail = w - this.class.scaleW - 12 - this.prGroupGap, used;
 		barW = ((avail / this.prBarCount.max(1)) - this.class.gap).clip(this.class.minBarW, this.class.maxBarW).floor;
 		slot = barW + this.class.gap;
+		used = this.prBarCount * slot + this.prGroupGap;
+		left = ((avail - used) / 2).max(0).floor;
 	}
 
 	// one Event per bar: what the last reply said, and what is held
 	prClearLevels {
-		levels = this.prBarCount.collect { (peak: 0, rms: 0, hold: 0, holdAt: 0, max: 0, clip: false) };
+		levels = this.prBarCount.collect { (peak: 0, rms: 0, power: 0, hold: 0, holdAt: 0, max: 0, clip: false) };
 	}
 
 	controls {
@@ -130,18 +139,22 @@ SPMeter : SPWindow {
 		resp = nil;
 		synth !? { if (server.serverRunning) { server.sendBundle(nil, ['/error', -1], ['/n_free', synth.nodeID], ['/error', -2]) } };
 		synth = nil;
-		levels.do { |l| l[\peak] = 0; l[\rms] = 0 };
+		levels.do { |l| l[\peak] = 0; l[\rms] = 0; l[\power] = 0 };
 		this.prRefresh;
 	}
 
 	prReply {
 		|msg|
 		var now = Main.elapsedTime;
+		// the rms averaged over rmsTime: the power smoothed, one pole a reply
+		var k = exp((now - lastReply).clip(0, 1).neg / rmsTime);
+		lastReply = now;
 		msg[3..].clump(2).do { |pr, i|
 			var l = levels[i];
 			if (l.notNil) {
 				l[\peak] = pr[0];
-				l[\rms] = pr[1];
+				l[\power] = (pr[1].squared * (1 - k)) + (l[\power] * k);
+				l[\rms] = l[\power].sqrt;
 				if (pr[0] >= l[\hold] or: { (now - l[\holdAt]) > holdTime }) { l[\hold] = pr[0]; l[\holdAt] = now };
 				l[\max] = max(l[\max], pr[0]);
 				if (pr[0] >= 1) { l[\clip] = true };
@@ -167,7 +180,7 @@ SPMeter : SPWindow {
 	// where bar i starts across the view
 	prBarX {
 		|i|
-		var x = this.class.scaleW + 4 + (i * slot);
+		var x = left + this.class.scaleW + 4 + (i * slot);
 		if (i >= numIns and: { numIns > 0 }) { x = x + this.class.groupGap };
 		^x
 	}
@@ -176,8 +189,25 @@ SPMeter : SPWindow {
 
 	prShortName { |i| ^if (i < numIns) { (i + 1).asString } { (i - numIns).asString } }
 
-	// a level as 0 at the bottom of the scale, 1 at 0 dBFS
-	prFrac { |amp| ^((amp.max(1e-9).ampdb - dbLow) / dbLow.neg).clip(0, 1) }
+	// a level as 0 at the bottom of the scale, 1 at 0 dBFS, on the IEC
+	// 60268-18 scale: a dB is 2.5 % of the height above -20 dB, less and
+	// less below
+	prFrac { |amp|
+		var lo = this.class.iec(dbLow);
+		^((this.class.iec(amp.max(1e-9).ampdb) - lo) / (100 - lo)).clip(0, 1)
+	}
+
+	*iec {
+		|db|
+		^case
+		{ db < -70 } { (db + 70) * 0.1 }		// past the standard's floor, for the -80 and -96 ranges
+		{ db < -60 } { (db + 70) * 0.25 }
+		{ db < -50 } { (db + 60) * 0.5 + 2.5 }
+		{ db < -40 } { (db + 50) * 0.75 + 7.5 }
+		{ db < -30 } { (db + 40) * 1.5 + 15 }
+		{ db < -20 } { (db + 30) * 2 + 30 }
+		{ true } { (db + 20) * 2.5 + 50 }
+	}
 
 	prDbString {
 		|amp|
@@ -185,9 +215,13 @@ SPMeter : SPWindow {
 		^if (db < dbLow) { "-inf" } { db.round(0.1).asString }
 	}
 
+	// the marks of the scale, top down; one too close to the last is left out
 	prTicks {
-		^#[0, -3, -6, -9, -12, -18, -24, -30, -40, -50, -60, -70, -80, -90].select { |d|
-			(d >= dbLow) and: { dbLow > -70 or: { d % 10 == 0 or: { d > -12 } } }
+		|span|
+		var lastY = -100;
+		^#[0, -3, -6, -9, -12, -15, -18, -24, -30, -40, -50, -60, -70, -80, -90, -96].select { |d|
+			var y = span * (1 - this.prFrac(d.dbamp));
+			(d >= dbLow) and: { (y - lastY) >= 12 } and: { lastY = y; true }
 		}
 	}
 
@@ -201,13 +235,13 @@ SPMeter : SPWindow {
 		right = if (this.prBarCount > 0) { this.prBarX(this.prBarCount - 1) + bw + 2 } { w - 4 };
 
 		// the scale, its lines across every bar
-		this.prTicks.do { |d|
+		this.prTicks(span).do { |d|
 			var y = (bottom - (span * this.prFrac(d.dbamp))).round + 0.5;
 			Pen.strokeColor = SPWidgetBase.colGrid.copy.alpha_(if (d == 0) { 0.7 } { 0.3 });
 			Pen.width = 1;
-			Pen.line(Point(this.class.scaleW, y), Point(right, y));
+			Pen.line(Point(left + this.class.scaleW, y), Point(right, y));
 			Pen.stroke;
-			this.prText(d.asString, this.class.scaleW - 4, y - 6, nil, \right);
+			this.prText(d.asString, left + this.class.scaleW - 4, y - 6, nil, \right);
 		};
 
 		// which group is which
@@ -217,11 +251,14 @@ SPMeter : SPWindow {
 		levels.do { |l, i|
 			var x = this.prBarX(i), rmsY = bottom - (span * this.prFrac(l[\rms]));
 			var peakY = bottom - (span * this.prFrac(l[\peak])), holdY = bottom - (span * this.prFrac(l[\hold]));
-			// the well, then the rms in three colours, as the panel's meters
+			// the well, the peak as a dim column, then the rms over it in
+			// three colours, as the panel's meters
 			Pen.fillColor = SPWidgetBase.colBg;
 			Pen.fillRect(Rect(x, top, bw, span));
 			[[bottom, warnY, SPWidgetBase.colMeter], [warnY, clipY, SPWidgetBase.colAccent], [clipY, top, SPWidgetBase.colClip]].do { |seg|
-				var lo = seg[0], hi = max(seg[1], rmsY);
+				var lo = seg[0], hi = max(seg[1], peakY);
+				if (hi < lo) { Pen.fillColor = seg[2].copy.alpha_(0.28); Pen.fillRect(Rect(x, hi, bw, lo - hi)) };
+				hi = max(seg[1], rmsY);
 				if (hi < lo) { Pen.fillColor = seg[2]; Pen.fillRect(Rect(x, hi, bw, lo - hi)) };
 			};
 			// the peak, and what is held
@@ -237,8 +274,9 @@ SPMeter : SPWindow {
 			Pen.fillColor = if (l[\clip]) { SPWidgetBase.colClip } { SPWidgetBase.colPanel };
 			Pen.fillRect(Rect(x, top - 9, bw, 6));
 			// the channel, and the highest peak since the last reset
+			// (a bar too narrow for the number shows it rounded)
 			this.prText(this.prShortName(i), x + (bw / 2), bottom + 3, nil, \center);
-			this.prText(this.prMaxString(l[\max]), x + (bw / 2), bottom + 15,
+			this.prText(this.prMaxString(l[\max], bw < 22), x + (bw / 2), bottom + 15,
 				if (l[\max] >= 1) { SPWidgetBase.colClip } { SPWidgetBase.colText }, \center, 8);
 		};
 		if (this.prBarCount == 0) { this.prText("this server has no inputs and no outputs", 10, 10) };
@@ -246,11 +284,11 @@ SPMeter : SPWindow {
 
 	// the highest peak, short enough to sit under a bar
 	prMaxString {
-		|amp|
+		|amp, short = false|
 		var db = amp.max(1e-9).ampdb;
 		^case
 		{ db < dbLow } { "-" }
-		{ db > -10 } { db.round(0.1).asString }
+		{ db > -10 and: { short.not } } { db.round(0.1).asString }
 		{ true } { db.round(1).asInteger.asString }
 	}
 

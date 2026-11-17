@@ -4,11 +4,13 @@ categories:: Libraries>ServerPanel
 related:: Classes/SPScope, Classes/SPTree, Classes/ServerPanel, Classes/ServerMeter
 
 DESCRIPTION::
-What code::s.meter:: opens, made again the way link::Classes/ServerPanel:: is drawn. A bar per input and per output: the rms as the body (blue, orange above -6 dB, red above -1 dB), the peak as a white line, the held peak as an orange one (red over 0 dBFS). The light over each bar goes red when a peak reaches 0 dBFS and stays red; the number under the bar is the highest peak since the last reset. One dB scale runs beside all of them. Point at a bar and the line along the bottom reads its peak, rms and highest peak.
+What code::s.meter:: opens, made again the way link::Classes/ServerPanel:: is drawn. A bar per input and per output: the rms as the body (blue, orange above -6 dB, red above -1 dB) over a dim column that reaches the peak, the peak as a white line, the held peak as an orange one (red over 0 dBFS). The light over each bar goes red when a peak reaches 0 dBFS and stays red; the number under the bar is the highest peak since the last reset. One dB scale runs beside all of them.
+
+The scale is the IEC 60268-18 one, as on a mixing desk: above -20 dB a dB is 2.5 % of the height, so the top 20 dB, where levels are set, take half of it; below, each 10 dB takes less. The rms is averaged over link::#*rmsTime:: (300 ms, the time a VU meter takes), so the body moves the way loudness is heard and the peak line shows the transients. The bars share the window's width; past their widest the scale and the bars sit in the middle. Point at a bar and the line along the bottom reads its peak, rms and highest peak.
 
 Click the meters, or press strong::reset::, to let go of the holds, the numbers and the lights.
 
-Its synth reads the inputs with code::SoundIn:: and the outputs from bus 0, at the tail of the root node, so the outputs are read after everything, a master fx chain included. It sends 20 replies a second. One per server; ServerPanel's code::l:: key opens it. It survives cmd + period and a reboot and frees its synth when it closes.
+Its synth reads the inputs with code::SoundIn:: and the outputs from bus 0, at the tail of the root node, so the outputs are read after everything, a master fx chain included. It sends 30 replies a second. One per server; ServerPanel's code::l:: key opens it. It survives cmd + period and a reboot and frees its synth when it closes.
 
 code::
 s.boot;
@@ -27,7 +29,16 @@ A link::Classes/Server::; code::Server.default:: when nil.
 RETURNS:: an SPMeter
 
 METHOD:: replyRate
-Replies a second: 20.
+Replies a second: 30.
+
+METHOD:: rmsTime
+The time the rms is averaged over, in seconds: 0.3. The averaging is done in the language, on the power of each reply, so it costs the server nothing.
+
+METHOD:: iec
+Where a level sits on the scale.
+ARGUMENT:: db
+A level in dB.
+RETURNS:: 0 at -70 dB to 100 at 0 dB (IEC 60268-18), on a line of its own below -70.
 
 METHOD:: maxChannels
 The most inputs, and the most outputs, shown: 32 each.
