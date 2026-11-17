@@ -59,9 +59,10 @@ made, and a tool that is not installed is a button that is not there.
 
 | tool | what the panel does with it |
 |---|---|
-| [ParaEQ](https://github.com/fracnesco/sc-EQ) (`FxChain`) | the `fx` row: a chain of effects on the main out, with its own window. See [the master fx](#the-master-fx) |
+| [FxKit](https://github.com/fracnesco/sc-fx-kit) (`FxChain`) | the `fx` row: a chain of effects on the main out, with its own window. See [the master fx](#the-master-fx) |
 | [Compressor](https://github.com/fracnesco/sc-compressor) | put in that chain after the eq |
-| [FxKit](https://github.com/fracnesco/sc-fx-kit) and the effects built on it | the chain's **+ effect** menu |
+| [ParaEQ](https://github.com/fracnesco/sc-eq) | put in that chain first |
+| the effects built on FxKit | the chain's **+ effect** menu |
 | [Insight](https://github.com/fracnesco/supercollider-insight-meter) | the `i` button by the meters: spectrum, loudness and image of the main out |
 | [BusRecorder](https://github.com/fracnesco/sc-recorder) | the `r` button in the record row |
 | [BusManager](https://github.com/fracnesco/sc-bus-manager) | the node tree names busses by their BusManager names |
@@ -134,7 +135,8 @@ The same entries are in the options menu at the top right.
 ## The master fx
 
 The `fx` button opens a chain of effects on the main out (`FxChain.master`,
-from [ParaEQ](https://github.com/fracnesco/sc-EQ)): an eq, and a compressor if
+from [FxKit](https://github.com/fracnesco/sc-fx-kit)): an eq if
+[ParaEQ](https://github.com/fracnesco/sc-eq) is installed, and a compressor if
 [Compressor](https://github.com/fracnesco/sc-compressor) is installed, both off
 until you switch them on. The line beside the button says what is in the chain
 and what is on, whether its window is open or not. The chain runs after the

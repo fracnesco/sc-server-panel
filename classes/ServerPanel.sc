@@ -241,7 +241,7 @@ SPWidgetBase {
 	*masterFx {
 		|server|
 		var cls = \FxChain.asClass;
-		if (cls.isNil) { ^"ServerPanel: ParaEQ (FxChain) is not installed".postln };
+		if (cls.isNil) { ^"ServerPanel: FxKit (FxChain) is not installed".postln };
 		^cls.master(server)
 	}
 

@@ -19,7 +19,7 @@
 // WindowViewRecall, WindowHandleView, ServerOptionsGui, Connection and
 // Preference - the quark route installs them; with a link, install them
 // first (Quarks.install("Singleton") and so on). Insight, BusRecorder and
-// ParaEQ (FxChain) are optional: each adds a button when it is installed.
+// FxKit (FxChain) are optional: each adds a button when it is installed.
 //
 // It replaces ServerView: both can be installed, but both take over the
 // window the server opens on boot - uninstall ServerView to keep this one.
