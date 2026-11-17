@@ -307,17 +307,13 @@ SPAction {
 }
 
 SPSelectorWidget : SPWidgetBase {
-	var serverList, view, runningText, bootButton, defaultButton, optionsMenu, optionsView, controller, serverQuitView;
+	var serverList, view, runningText, bootButton, defaultButton, optionsMenu, controller, serverQuitView;
 	var connections;
 
 	actions {
 		var actions = [
 			SPAction("Options", 'o', {
-				if (optionsView.isNil) {
-					optionsView = ServerOptionsGui(server);
-					optionsView.parent.autoRememberPosition(\ServerOptionsGui);
-					optionsView.parent.onClose_({ optionsView = nil })
-				};
+				SPOptions(server);
 			}),
 
 			SPAction("Query nodes", 'n',
@@ -427,11 +423,7 @@ SPSelectorWidget : SPWidgetBase {
 			}).shortcut_("0"),
 
 			MenuAction("Options...", {
-				if (optionsView.isNil) {
-					optionsView = ServerOptionsGui(server);
-					optionsView.parent.autoRememberPosition(\ServerOptionsGui);
-					optionsView.parent.onClose_({ optionsView = nil })
-				};
+				SPOptions(server);
 			}).shortcut_("o"),
 
 			MenuAction.separator,

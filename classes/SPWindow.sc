@@ -60,6 +60,7 @@ SPWindow {
 	prRedraw { }							// draw again, on AppClock
 	prResized { }
 	runHint { ^"run or pause (space)" }
+	hasRunButton { ^true }					// false for a window with nothing to run
 	defaultHint { ^"hover over a control and this bar says what it does" }	// what the bar says over nothing
 
 	// ------------------------------------------------------------------ open
@@ -122,7 +123,7 @@ SPWindow {
 			.action_({ |b| this.class.showHints = b.value });
 		this.prHintAttach(hintBox, "the bar along the bottom that says what the pointer is over - untick to fold it away");
 
-		top = HLayout(*([runButton] ++ this.controls ++ [nil, hintBox])).spacing_(6).margins_(0);
+		top = HLayout(*((if (this.hasRunButton) { [runButton] } { [] }) ++ this.controls ++ [nil, hintBox])).spacing_(6).margins_(0);
 		body = this.prBody;
 		window.layout = VLayout(top, [body, stretch: 1], readout).margins_(6).spacing_(4);
 
@@ -134,7 +135,7 @@ SPWindow {
 
 		window.view.keyDownAction_({ |v, char, mods, unicode, keycode|
 			case
-			{ char == $  } { this.running = running.not; true }
+			{ char == $  and: { this.hasRunButton } } { this.running = running.not; true }
 			{ keycode == 53 or: { unicode == 27 } } { this.close; true }
 		});
 

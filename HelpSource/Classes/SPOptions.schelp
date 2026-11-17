@@ -1,0 +1,74 @@
+TITLE:: SPOptions
+summary:: the server's options, in ServerPanel's colours, applied when you say so
+categories:: Libraries>ServerPanel
+related:: Classes/ServerOptions, Classes/ServerPanel, Classes/SPMeter
+
+DESCRIPTION::
+What ServerPanel's code::o:: key and its strong::Options:: entry open. Every link::Classes/ServerOptions:: setting worth changing, in cards by what it is about: the audio device (input and output device, sample rate, hardware buffer), the channels, what the server holds (real-time memory in MB, nodes, synthdefs, wire buffers, buffers, block size) and recording and timing (latency, record channels and formats). The rare ones fold under strong::more::.
+
+A setting you change lights its name and waits. strong::apply:: sets the changes: latency and the recording settings belong to the server object and take effect at once; the rest are the server's options and take effect at its next boot, which the top row says. strong::apply and reboot:: does both, and reboots only when a change needs it. strong::revert:: forgets the changes, strong::defaults:: puts ServerOptions' own defaults in, to apply like any change. Hover over a setting and the hint bar says what it does.
+
+One per server, like the scopes. It replaces ServerOptionsGui in the panel; that quark is still a dependency and works as before.
+
+code::
+SPOptions(s);
+SPOptions(s).set(\memSize, 2 ** 17);   // as if changed in the window
+SPOptions(s).apply;                     // or applyAndReboot
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+The options window of a server, opened if it is not.
+ARGUMENT:: server
+A link::Classes/Server::; code::Server.default:: when nil.
+RETURNS:: an SPOptions
+
+METHOD:: cards
+What the window shows: an Array of [title, rows]; a row is [key, label, kind, extra, hint].
+
+METHOD:: serverKeys
+The settings that belong to the server object, not its options, and take effect at once.
+
+INSTANCEMETHODS::
+
+METHOD:: set
+Change a setting, as if in the window: it waits for link::#-apply::.
+ARGUMENT:: key
+A ServerOptions setter's name without the underscore, or one of link::#*serverKeys::.
+ARGUMENT:: value
+The new value; the current one takes the change back.
+
+METHOD:: valueOf
+What a setting will be: the change waiting, or what it is now.
+ARGUMENT:: key
+The setting.
+
+METHOD:: current
+What a setting is now.
+ARGUMENT:: key
+The setting.
+
+METHOD:: pending
+The changes waiting, an link::Classes/IdentityDictionary:: of key -> value.
+
+METHOD:: apply
+Set the changes. The server's options take effect at its next boot.
+
+METHOD:: applyAndReboot
+Set the changes, and reboot the server if one of them needs it.
+
+METHOD:: revert
+Forget the changes.
+
+METHOD:: defaults
+Put ServerOptions' own defaults in, as changes waiting.
+
+METHOD:: needsReboot
+Whether a change waiting, once applied, needs a reboot to take effect.
+
+METHOD:: front
+Bring the window to the front.
+
+METHOD:: close
+Close the window. Changes not applied are forgotten.
