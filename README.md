@@ -132,7 +132,8 @@ error at compile time.
 
 The same entries are in the options menu at the top right.
 
-Above them, **on top** keeps the panel in front of every other window (it is
+In the server's row, between **D** (make it the default server) and the menu,
+**on top** keeps the panel in front of every other window (it is
 remembered between sessions), and **hints** folds away the hint bar along the
 bottom, which says what the pointer is over and, over nothing, the keys. The
 box is the same one as in the other windows: untick it in one and every window

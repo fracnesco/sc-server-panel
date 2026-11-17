@@ -80,9 +80,9 @@ ServerPanel : Singleton {
 
 	createView {
 		var column;
-		window = Window("server", Rect(0, 0, 265, 200), resizable:true, border:border);
+		window = Window("server", Rect(0, 0, 320, 200), resizable:true, border:border);
 		window.autoRememberPosition(\ServerPanel);
-		view = window.view.minWidth_(265).minHeight_(200);
+		view = window.view.minWidth_(320).minHeight_(200);
 
 		// the dark palette every module window is drawn in, so the Qt
 		// widgets that are not coloured by hand - sliders, menus, number
@@ -94,12 +94,6 @@ ServerPanel : Singleton {
 			|v, char|
 			actions[char.asSymbol].value(this);
 		});
-
-		// the top row: keep the panel in front, fold the hint bar away
-		onTopBox = CheckBox().string_("on top").font_(SPWidgetBase.font(9)).canFocus_(false)
-			.value_(this.class.onTop).action_({ |b| this.class.onTop = b.value });
-		hintBox = CheckBox().string_("hints").font_(SPWidgetBase.font(9)).canFocus_(false)
-			.value_(SPWindow.showHints).action_({ |b| SPWindow.showHints = b.value });
 
 		// the hint bar, as in every window of the family: drawn, two lines
 		// high, so the panel's narrow width wraps a hint rather than cutting it
@@ -116,7 +110,6 @@ ServerPanel : Singleton {
 
 		widgetLayout = VLayout();
 		column = VLayout(
-			HLayout(nil, onTopBox, hintBox).margins_(0).spacing_(8),
 			widgetLayout,
 			hintBar
 		).spacing_(4).margins_(0);
@@ -178,9 +171,21 @@ ServerPanel : Singleton {
 		if (hintBar.notNil and: { hintBar.isClosed.not }) { hintBar.refresh };
 	}
 
+	// Keep the panel in front, fold the hint bar away: two boxes for the
+	// server row, made again each time that row is (a server change)
+	makeTopBoxes {
+		onTopBox = CheckBox().string_("on top").font_(SPWidgetBase.font(9)).canFocus_(false)
+			.value_(this.class.onTop).action_({ |b| this.class.onTop = b.value });
+		hintBox = CheckBox().string_("hints").font_(SPWidgetBase.font(9)).canFocus_(false)
+			.value_(SPWindow.showHints).action_({ |b| SPWindow.showHints = b.value });
+		this.hintAttach(onTopBox, "keep this window in front of every other one - remembered between sessions");
+		this.hintAttach(hintBox, "this bar, in every window of the panel's family - untick to fold it away");
+		^[onTopBox, hintBox]
+	}
+
 	// the on top and hints boxes, and the window, as the class says
 	prSyncTop {
-		if (window.isNil or: { window.isClosed }) { ^this };
+		if (window.isNil or: { window.isClosed } or: { onTopBox.isNil } or: { onTopBox.isClosed }) { ^this };
 		if (window.alwaysOnTop != this.class.onTop) { window.alwaysOnTop = this.class.onTop };
 		onTopBox.value = this.class.onTop;
 		hintBox.value = SPWindow.showHints;
@@ -661,16 +666,15 @@ SPSelectorWidget : SPWidgetBase {
 
 		view = View();
 		view.layout_(
-			HLayout(
+			HLayout(*([
 				[serverList, \align: \left],
 				defaultButton = (Button()
 					.action_(this.defaultAction(_))
 					.fixedSize_(22@20)
 					.canFocus_(false)
 					.spHint(this, "make this the default server")
-				),
-				nil,
-				optionsMenu
+				)
+			] ++ (parent.tryPerform(\makeTopBoxes) ? []) ++ [nil, optionsMenu])
 			).margins_(0).spacing_(4)
 		);
 
